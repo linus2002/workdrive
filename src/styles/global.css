@@ -1213,7 +1213,8 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .notice.warn svg { flex: none; margin-top: 2px; }
 
 .tab-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary-strong); color: #fff; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
-.details-panel .tabs.small, .preview-info .tabs.small { padding: 0 8px; }
+.details-panel .tabs.small, .preview-info .tabs.small { padding: 0 8px; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none; }
+.details-panel .tabs.small::-webkit-scrollbar, .preview-info .tabs.small::-webkit-scrollbar { display: none; }
 .details-panel .tabs.small button, .preview-info .tabs.small button { padding: 8px 8px; gap: 5px; flex: 1 1 auto; justify-content: center; }
 .details-panel .tabs.small button > svg, .preview-info .tabs.small button > svg { display: none; }
 
