@@ -1,0 +1,20 @@
+/* Crash screens (src/components/common/ErrorBoundary.jsx). Uses the global theme variables, so dark mode just works. */
+.eb-screen { display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; min-height: 60%; }
+.eb-screen-full { min-height: 100vh; align-items: center; background: var(--bg-sub); }
+.eb-card { width: 100%; max-width: 480px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 24px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12)); color: var(--text); }
+.eb-card h2 { margin: 4px 0 0; font-size: 18px; font-weight: 600; }
+.eb-card p { margin: 0; line-height: 1.5; }
+.eb-icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: rgba(234, 122, 26, 0.12); color: #B45309; }
+:root[data-theme='dark'] .eb-icon { color: #F5B840; background: rgba(245, 184, 64, 0.14); }
+.eb-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.eb-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.eb-details { width: 100%; margin-top: 8px; text-align: left; font-size: 12.5px; color: var(--text-2); }
+.eb-details summary { cursor: pointer; padding: 4px 0; width: max-content; }
+.eb-details summary:focus-visible { outline: 2px solid var(--primary, #1686D9); outline-offset: 2px; border-radius: 4px; }
+.eb-details pre { margin: 6px 0 0; padding: 10px 12px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--bg-sub); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text); }
+.eb-preview { position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 17, 20, 0.72); }
+@media (max-width: 600px) {
+  .eb-screen { padding: 24px 16px; }
+  .eb-card { padding: 22px 16px; }
+  .eb-actions .btn { flex: 1 1 auto; justify-content: center; }
+}

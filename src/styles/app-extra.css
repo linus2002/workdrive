@@ -1,0 +1,38 @@
+/* Dialogs, views and admin screens: fixes layered over global.css */
+
+/* Long file / team names wrap instead of overflowing dialogs */
+.dialog-text,
+.modal-titles h2,
+.modal-titles p { overflow-wrap: anywhere; word-break: normal; }
+.modal-titles { min-width: 0; }
+
+/* Type-to-confirm (e.g. deleting a team folder) */
+.type-confirm { margin-top: 12px; }
+.type-confirm .field-label strong { color: var(--text); overflow-wrap: anywhere; }
+
+/* Label chip with a remove button: both parts are real buttons */
+.label-chip .label-chip-main { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; min-width: 0; text-align: left; }
+.label-chip button.label-x { background: none; border: 0; color: inherit; font: inherit; font-size: 14px; }
+.label-chip .label-chip-main:focus-visible,
+.label-chip button.label-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-radius: 4px; }
+
+/* Storage analytics: file name is the keyboard-reachable control in a clickable row */
+.cell-link { color: inherit; text-align: left; min-width: 0; font-weight: inherit; }
+.cell-link:hover { color: var(--primary); text-decoration: underline; }
+
+/* Two-factor enrolment */
+.twofa-enrol { margin: 4px 0 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-sub); display: flex; flex-direction: column; gap: 10px; }
+.twofa-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; color: var(--text); }
+.twofa-key { display: block; margin-top: 6px; padding: 6px 10px; width: fit-content; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.08em; color: var(--text); }
+.twofa-code { max-width: 160px; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; }
+.twofa-enrol .btn-row { align-items: center; flex-wrap: wrap; }
+
+/* Hints next to disabled buttons */
+.btn-row .muted.small { align-self: center; }
+
+/* Loading states while a screen, dialog or the file preview downloads its code */
+.spinner { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--border); border-top-color: var(--primary); animation: spin 0.8s linear infinite; }
+.screen-loading { display: flex; align-items: center; justify-content: center; min-height: 40vh; width: 100%; }
+.preview-loading { position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center; background: rgba(15, 17, 21, 0.55); }
+.dialog-loading { display: flex; align-items: center; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }

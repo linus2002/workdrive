@@ -1,0 +1,14 @@
+# Dependencies and build output
+node_modules
+dist
+
+# Test output
+tests/e2e/shots
+
+# Local tool data and settings (not part of the app)
+.claude/
+
+# Local environment files and logs
+.env
+.env.*
+*.log
