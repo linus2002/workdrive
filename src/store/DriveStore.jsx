@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { USERS, TEAMS, PRIORITY_TEAMS, ITEMS, NOTIFICATIONS, AUDIT, ORG, ME, FILE_REQUESTS, normalizeLink, TASKS, APPROVALS, PRODUCTIVITY_NOTIFICATIONS, LEGAL_HOLDS, SESSIONS, SIGN_REQUESTS, SIGN_ITEM_NAMES, SIGN_NOTIFICATIONS, GUEST_USERS, GUEST_SHARES, GUEST_MEMBERS, guestShareEntry, guestMemberEntry, BRANDING, SAMPLE_LINK_SECRET_HASH } from '../data/mockData';
 import { computeStatus, SIGNER_COLORS } from '../signatures/status';
 import { uid } from '../utils/format';
-import { descendantIds, childIds, lockedInside, isTrashedDeep, uniqueName, ancestors, lockedByOther, holdOn, blocksPermanentDelete, accessOf, canEdit, teamRoleOf, quotaError, activeHolds, canDownload } from './selectors';
+import { descendantIds, childIds, lockedInside, isTrashedDeep, uniqueName, ancestors, lockedByOther, canForceUnlock, canManage, holdOn, blocksPermanentDelete, accessOf, canEdit, teamRoleOf, quotaError, activeHolds, canDownload } from './selectors';
 import { deviceLabel, sessionIp } from '../utils/sharing';
 import { DEFAULT_OFFBOARD } from '../offboard/offboard';
 
@@ -646,12 +646,15 @@ export function DriveStoreProvider({ children }) {
     const pendingFolders = new Set(); // ids from ensureFolderPath not yet in the rendered state
     const o = {
       get,
+      /** Back to the sample workspace. Refused (returns false) while a legal hold is active: it would wipe held files. */
       reset() {
+        if (activeHolds(get()).length) return false;
         stateStore.clear();
         blobRegistry.forEach((v) => URL.revokeObjectURL(v.url));
         blobRegistry.clear();
         fileStore.clear().catch(() => {});
         setState(seedState());
+        return true;
       },
 
       /**
@@ -661,6 +664,7 @@ export function DriveStoreProvider({ children }) {
        */
       async replaceWorkspace(saved, files) {
         const cur = get();
+        if (activeHolds(cur).length) throw new Error('this workspace has active legal holds. Release them first, since replacing it would delete held files');
         const next = { ...hydrate(saved), signedOut: cur.signedOut, remember: cur.remember };
         // Save the state first: if it doesn't fit, nothing has been touched yet. If the files then fail to
         // write, put the previous state back so the saved state and the file store still match.
@@ -727,9 +731,10 @@ export function DriveStoreProvider({ children }) {
       },
 
       renameItem(id, name) {
+        if (!String(name || '').trim()) return;
         update((s) => {
           const it = s.items[id];
-          if (!it || lockedByOther(s, it)) return s;
+          if (!it || lockedByOther(s, it) || !canEdit(accessOf(s, it))) return s;
           const finalName = uniqueName(s, name, it.parentId, it.space, id);
           const ext = it.type === 'file' ? (finalName.includes('.') ? finalName.split('.').pop().toLowerCase() : '') : '';
           const ns = patchItems(s, { [id]: { name: finalName, ext: it.type === 'file' ? ext : '', modifiedAt: Date.now(), modifiedBy: s.meId } });
@@ -893,15 +898,23 @@ export function DriveStoreProvider({ children }) {
           if (!ok.length) return s;
           for (const id of ok) patches[id] = { trashed: true, trashedAt: now, trashedBy: s.meId, favorite: false };
           const names = ok.map((id) => s.items[id]?.name).filter(Boolean);
-          const ns = cancelRequestsFor(patchItems(s, patches), ok, 'The document was moved to Trash');
+          // Requests for PDFs inside a trashed folder can't be signed any more either.
+          const inside = ok.flatMap((id) => [id, ...descendantIds(s.items, id)]);
+          const ns = cancelRequestsFor(patchItems(s, patches), inside, 'The document was moved to Trash');
           return log(ns, 'File deleted', names.length === 1 ? names[0] : `${names.length} items`, 'Moved to trash');
         });
         return res;
       },
 
       /** Restore from trash. Returns number restored to root because their original folder is gone. */
-      restoreItems(ids) {
+      restoreItems(requested) {
         const snap = get();
+        // Same rule as moving to Trash: edit access, or it's yours, or you trashed it.
+        const ids = requested.filter((id) => {
+          const it = snap.items[id];
+          return it && (canEdit(accessOf(snap, it)) || it.ownerId === snap.meId || it.trashedBy === snap.meId);
+        });
+        if (!ids.length) return 0;
         const depth = (items, id) => ancestors(items, id).length;
         const restoring = new Set(ids);
         // A parent restored in the same batch is not "gone".
@@ -1203,6 +1216,7 @@ export function DriveStoreProvider({ children }) {
         const it = get().items[id];
         const v = it?.versions?.find((x) => x.id === versionId);
         if (!v || holdOn(get(), id)) return false;
+        if (!canManage(accessOf(get(), it)) || lockedByOther(get(), it)) return null; // not allowed (the UI hides it)
         unregisterBlob(versionKey(id, v.no));
         update((s) => log(patchItems(s, { [id]: { versions: (s.items[id].versions || []).filter((x) => x.id !== versionId) } }), 'Version deleted', it.name, `Version ${v.no}`, { itemId: id }));
       },
@@ -1211,14 +1225,14 @@ export function DriveStoreProvider({ children }) {
       lockItem(id) {
         update((s) => {
           const it = s.items[id];
-          if (!it || it.lock) return s;
+          if (!it || it.lock || !canEdit(accessOf(s, it))) return s;
           return log(patchItems(s, { [id]: { lock: { by: s.meId, at: Date.now() } } }), 'File locked', it.name, 'Checked out for editing', { itemId: id });
         });
       },
       unlockItem(id) {
         update((s) => {
           const it = s.items[id];
-          if (!it?.lock) return s;
+          if (!it?.lock || !canForceUnlock(s, it)) return s;
           const holder = it.lock.by === s.meId ? '' : `Lock held by ${s.users.find((u) => u.id === it.lock.by)?.name || 'another user'} removed`;
           return log(patchItems(s, { [id]: { lock: null } }), 'File unlocked', it.name, holder || 'Checked in', { itemId: id });
         });

@@ -1398,7 +1398,11 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .public-stage > :first-child { flex: 1 1 auto; min-height: 0; }
 .public-stage.no-copy { user-select: none; -webkit-user-select: none; }
 .watermark { position: absolute; inset: 0; pointer-events: none; background-repeat: repeat; z-index: 3; }
-@media print { .public-stage.no-copy, .public-stage .watermark { display: none !important; } }
+/* Printing: view-only files don't print at all; anything else prints with its watermark (it's part of the copy). */
+@media print {
+  .public-stage.no-copy, .embed-stage.no-copy { display: none !important; }
+  .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 .public-folder { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 8px; }
 .public-folder .breadcrumbs { padding: 0 8px 8px; }
 .public-list { list-style: none; margin: 0; padding: 0; }

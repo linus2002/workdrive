@@ -448,7 +448,7 @@ export function SignRequestCard({ r, showItem = true, compact = false }) {
               {mine && open && (s.status === 'sent' || s.status === 'viewed') && s.userId !== state.meId && (
                 <span className="row-actions show">
                   <button className="icon-btn sm" onClick={() => copy(s)} aria-label={`Copy signing link for ${s.name}`} data-tip="Copy signing link"><Link2 size={14} /></button>
-                  <a className="icon-btn sm" href={`/sign/${r.id}/${s.id}`} target="_blank" rel="noreferrer" aria-label={`Open the signing page as ${s.name}`} data-tip="Open signing page"><ExternalLink size={14} /></a>
+                  <a className="icon-btn sm" href={`/sign/${r.id}/${s.id}`} target="_blank" rel="noreferrer" aria-label={`Preview the signing page for ${s.name}`} data-tip="Preview signing page"><ExternalLink size={14} /></a>
                 </span>
               )}
               <Icon size={16} className="dec-icon" />

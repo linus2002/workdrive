@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Share2, Link2, Globe2, Building2, Lock, X, Copy, Mail, CalendarClock, KeyRound, UserPlus, Download, Droplets, ExternalLink, Check, ShieldAlert, QrCode, Code2, Hourglass, Eye, EyeOff, Users, AlertTriangle } from 'lucide-react';
-import { isGuest, defaultGuestExpiry, accessState } from '../../sharing/guests';
+import { isGuest, defaultGuestExpiry, accessState, sharingPolicyBlock } from '../../sharing/guests';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { effectiveShares, accessOf, canEdit, canManage } from '../../store/selectors';
@@ -42,14 +42,7 @@ export default function ShareDialog({ id, onClose }) {
 
   const orgDomain = String(state.org.domain || '').toLowerCase();
   /** Why sharing with this address isn't allowed by the admin's sharing policy (null when it is). */
-  const policyBlock = (email) => {
-    const domain = domainOf(email);
-    if (domain === orgDomain) return null;
-    if (!policies.externalSharing) return 'External sharing is disabled by your administrator';
-    const allowed = String(policies.allowedDomains || '').split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
-    if (allowed.length && !allowed.includes(domain)) return `Sharing with @${domain} is not allowed by policy`;
-    return null;
-  };
+  const policyBlock = (email) => sharingPolicyBlock(state, email);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -110,12 +103,14 @@ export default function ShareDialog({ id, onClose }) {
     for (const p of pending) {
       let userId = p.userId;
       const external = isExternalPending(p);
+      // Guests (outside the domain, or given the Guest role) get time-limited access.
+      const guest = external || (userId && isGuest(state, state.users.find((u) => u.id === userId)));
       if (!userId) {
         // New address: invite them (colleagues at your domain join as Members, everyone else as Guests).
         userId = api.addUser({ name: p.email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), email: p.email, role: external ? 'Guest' : 'Member', invitedBy: state.meId });
       }
       // People outside the organization get time-limited access (admin policy); they can be renewed later.
-      entries.push({ userId, role, sharedAt: now, sharedBy: state.meId, ...(external && guestExpiry ? { expires: guestExpiry } : {}) });
+      entries.push({ userId, role, sharedAt: now, sharedBy: state.meId, ...(guest && guestExpiry ? { expires: guestExpiry } : {}) });
     }
     api.setShares(item.id, [...item.sharedWith, ...entries]);
     toast(`Shared "${item.name}" with ${entries.length} ${entries.length === 1 ? 'person' : 'people'}${notify ? ' · notification sent' : ''}`, { type: 'success' });

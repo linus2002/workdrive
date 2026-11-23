@@ -1,7 +1,7 @@
 // Data loss prevention: find sensitive data in a file's indexed text and decide whether a share may go ahead.
 // Detection is pattern-based with validation (Luhn, IBAN checksum, format rules) to keep false positives down.
 import { getEntry } from '../search/searchIndex';
-import { descendantIds, effectiveShares } from '../store/selectors';
+import { descendantIds, effectiveShares, ancestors } from '../store/selectors';
 
 const digits = (s) => s.replace(/\D/g, '');
 
@@ -24,8 +24,15 @@ function ibanValid(raw) {
 }
 /** Card number prefixes of real networks (Visa, Mastercard, Amex, Discover, JCB, Diners, UnionPay). */
 const cardNetwork = (d) => /^(4|5[1-5]|2(2[2-9]|[3-6]\d|7[01]|720)|3[47]|6011|65|64[4-9]|35(2[89]|[3-8]\d)|30[0-5]|36|38|62)/.test(d);
-/** True when the match is part of a longer run of numbers (e.g. a row of spreadsheet cells), not a standalone value. */
-const inNumberRun = (text, index, length) => /\d[ -]?$/.test(text.slice(Math.max(0, index - 3), index)) || /^[ -]?\d/.test(text.slice(index + length, index + length + 3));
+/**
+ * True when the match is part of a longer run of numbers (e.g. a row of spreadsheet cells), not a standalone value.
+ * An expiry date right after a card number ("4111 … 1111 12/27") is not a run: that's how cards are written down.
+ */
+const inNumberRun = (text, index, length) => {
+  if (/\d[ -]?$/.test(text.slice(Math.max(0, index - 3), index))) return true;
+  const after = text.slice(index + length, index + length + 8);
+  return /^[ -]?\d/.test(after) && !/^[ -]?\d{1,2}\/\d{2}(?:\d{2})?(?!\d)/.test(after);
+};
 
 /** Keep only the last 4 characters visible. */
 const mask = (s, keep = 4) => { const t = s.trim(); return t.length <= keep ? '••••' : `${t.slice(0, -keep).replace(/[A-Za-z0-9]/g, '•')}${t.slice(-keep)}`; };
@@ -33,10 +40,10 @@ const mask = (s, keep = 4) => { const t = s.trim(); return t.length <= keep ? '�
 export const SEVERITY = { high: { rank: 3, label: 'High', tone: 'red' }, medium: { rank: 2, label: 'Medium', tone: 'amber' }, low: { rank: 1, label: 'Low', tone: 'gray' } };
 
 export const DETECTORS = [
-  { id: 'card', name: 'Payment card numbers', one: 'payment card number', many: 'payment card numbers', severity: 'high', re: /\b(?:\d[ -]?){12,18}\d\b/g,
+  { id: 'card', name: 'Payment card numbers', one: 'payment card number', many: 'payment card numbers', severity: 'high', re: /\b(?:\d[ -]?){12,18}\d\b(?!\/\d)/g, // (?!/\d): stop before a following MM/YY expiry
     // Luhn checksum + a real card network prefix + not embedded in a longer run of numbers (tables of figures).
     valid: (m, text, index) => { const d = digits(m); return d.length >= 13 && d.length <= 19 && !/^(\d)\1+$/.test(d) && cardNetwork(d) && luhn(d) && !inNumberRun(text, index, m.length); } },
-  { id: 'iban', name: 'Bank IBANs', one: 'IBAN', many: 'IBANs', severity: 'high', re: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g, valid: ibanValid },
+  { id: 'iban', name: 'Bank IBANs', one: 'IBAN', many: 'IBANs', severity: 'high', re: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/gi, valid: ibanValid },
   { id: 'bank', name: 'Bank account numbers', one: 'bank account number', many: 'bank account numbers', severity: 'medium', re: /\b(?:account|acct|a\/c)\s*(?:no\.?|number|#)?\s*[:#]?\s*(\d[\d -]{6,18}\d)\b/gi, valid: (m) => digits(m).length >= 8 },
   { id: 'ph_tin', name: 'Philippine TINs', one: 'TIN', many: 'TINs', severity: 'high', re: /\b\d{3}-\d{3}-\d{3}(?:-\d{3,5})?\b/g },
   { id: 'ph_sss', name: 'Philippine SSS numbers', one: 'SSS number', many: 'SSS numbers', severity: 'high', re: /\b\d{2}-\d{7}-\d\b/g },
@@ -98,12 +105,36 @@ export function sensitiveWithin(state, item) {
 const domainOf = (email) => (email || '').split('@')[1]?.toLowerCase() || '';
 export const isExternalUser = (state, user) => !!user && domainOf(user.email) !== state.org.domain.toLowerCase();
 
-/** How a file/folder is exposed outside the organization right now. */
+const publicLinkOn = (link) => !!(link?.enabled && link.access === 'anyone' && !(link.expires && link.expires < Date.now()));
+
+/** How a file/folder is exposed outside the organization right now (a public link on a parent folder counts). */
 export function exposureOf(state, item) {
-  const link = item.link;
-  const publicLink = !!(link?.enabled && link.access === 'anyone' && !(link.expires && link.expires < Date.now()));
+  const publicLink = publicLinkOn(item.link) || ancestors(state.items, item.id).some((a) => publicLinkOn(a.link));
   const external = effectiveShares(state.items, item.id).map((s) => state.users.find((u) => u.id === s.userId)).filter((u) => isExternalUser(state, u));
   return { publicLink, external };
+}
+
+/**
+ * Under a "block" policy for public links: is any file this share would expose not yet scanned in its current
+ * version (new upload, just edited)? Until it is, treat it as possibly sensitive instead of letting it through.
+ */
+export function scanPending(state, item) {
+  const p = state.org.policies.dlp;
+  if (!item || !p?.enabled || p.action !== 'block' || !p.publicLinks) return false;
+  const ids = item.type === 'folder' ? descendantIds(state.items, item.id) : [item.id];
+  return ids.map((id) => state.items[id]).some((f) => f && f.type === 'file' && !f.trashed
+    && !getEntry(f.id)?.key?.startsWith(`${f.version || 1}|${f.size}|${f.modifiedAt}|`));
+}
+
+/** Like checkShare, for everything in a team folder (adding a member gives access to all of it). */
+export function checkSpaceShare(state, space, kind) {
+  const p = state.org.policies.dlp;
+  if (!p?.enabled || p.action === 'monitor') return { decision: 'allow', files: [] };
+  if ((kind === 'public' && !p.publicLinks) || (kind === 'external' && !p.external)) return { decision: 'allow', files: [] };
+  const roots = Object.values(state.items).filter((i) => i.space === space && !i.parentId && !i.trashed);
+  const files = roots.flatMap((r) => sensitiveWithin(state, r));
+  if (!files.length) return { decision: 'allow', files };
+  return { decision: p.action === 'block' ? 'block' : 'warn', files };
 }
 
 /**

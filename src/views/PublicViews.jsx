@@ -9,13 +9,14 @@ import { useDrive, useMe, registerBlob } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
 import { readUploadExtras, MAX_FILE_SIZE } from '../store/UploadContext';
 import { fileBlob } from '../store/useItemActions';
-import { accessOf, isTrashedDeep, folderRoute, parentRoute } from '../store/selectors';
+import { accessOf, canEdit, quotaError, isTrashedDeep, folderRoute, parentRoute } from '../store/selectors';
 import { getFileType } from '../utils/fileTypes';
 import { formatSize, formatDate, formatDateTime, splitName } from '../utils/format';
 import { saveBlob } from '../utils/exporters';
 import { linkStatus, requestStatus, deviceLabel, sessionIp } from '../utils/sharing';
 import { verifySecret, hasSecret, storedSecret } from '../data/storage/secrets';
-import { checkShare } from '../dlp/dlp';
+import { checkShare, scanPending } from '../dlp/dlp';
+import { isGuest } from '../sharing/guests';
 import { useSearchIndex, indexStatus } from '../search/searchIndex';
 import { FileIcon, Toasts, ProgressBar } from '../components/common';
 import { ImageViewer, PdfViewer, TextViewer, DocViewer, SheetViewer, SlidesViewer, VideoViewer, AudioViewer, ArchiveViewer, NoPreview } from '../components/preview/Viewers';
@@ -156,12 +157,13 @@ export function PublicLinkView() {
   // ?as=guest lets the owner preview exactly what an anonymous outsider sees.
   const params = new URLSearchParams(loc.search);
   const asGuest = params.get('as') === 'guest';
-  // A signed-in person previewing as a visitor: show everything, but record nothing and don't use up downloads.
-  const previewOnly = asGuest && !!signedIn && !state.signedOut;
   const via = params.get('src') === 'qr' ? 'qr' : null; // links printed as QR codes carry ?src=qr
   const me = !state.signedOut && !asGuest ? signedIn : null;
   const item = state.items[id];
   const alive = item && !isTrashedDeep(state.items, id);
+  // Someone who can already open the item, previewing as a visitor: record nothing and don't use up downloads.
+  // Anyone else adding ?as=guest is just a visitor (otherwise it would hide downloads and password guesses).
+  const previewOnly = asGuest && !!signedIn && !state.signedOut && !!alive && accessOf(state, item) !== 'none';
   const status = alive ? linkStatus(state, item) : { ok: false, reason: 'off' };
   const myAccess = me && alive ? accessOf(state, item) : 'none';
   const hasAccess = myAccess !== 'none';
@@ -181,12 +183,14 @@ export function PublicLinkView() {
   // Data loss prevention: under a "block" policy, outsiders can't open sensitive files through a public link.
   // The check reads the search index, which loads asynchronously, so it is "pending" until then.
   const dlpApplies = status.ok && status.link.access === 'anyone' && !hasAccess;
-  const dlpPending = dlpApplies && !indexReady;
+  const dlpPending = dlpApplies && (!indexReady || scanPending(state, item));
   const dlpBlocked = dlpApplies && indexReady && checkShare(state, item, 'public').decision === 'block';
   const needsSignIn = status.ok && status.link.access !== 'anyone' && !me;
+  // "Anyone at {org}" links: a signed-in outsider or Guest-role account is not "at" the organization.
+  const notInOrg = status.ok && status.link.access === 'org' && !!me && !hasAccess && isGuest({ ...state, meId: null }, me);
   const noPermission = status.ok && status.link.access === 'restricted' && me && !hasAccess;
   const needsPassword = status.ok && status.passwordProtected && !unlocked && !hasAccess;
-  const canView = status.ok && !dlpPending && !dlpBlocked && !needsSignIn && !noPermission && !needsPassword;
+  const canView = status.ok && !dlpPending && !dlpBlocked && !needsSignIn && !notInOrg && !noPermission && !needsPassword;
 
   useEffect(() => { if (alive && status.reason === 'expired') logOnce('expired', { event: 'blocked-expired' }); }); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (dlpBlocked) logOnce('dlp', { event: 'blocked-dlp' }); }); // eslint-disable-line react-hooks/exhaustive-deps
@@ -212,7 +216,7 @@ export function PublicLinkView() {
     }
     // Re-check data protection at the moment of download.
     if (st.link.access === 'anyone' && !hasAccess) {
-      if (!indexStatus().loaded) { ui.toast('Still checking this file. Try again in a moment.', { type: 'info' }); return; }
+      if (!indexStatus().loaded || scanPending(fresh, fresh.items[id])) { ui.toast('Still checking this file. Try again in a moment.', { type: 'info' }); return; }
       if (checkShare(fresh, fresh.items[id], 'public').decision === 'block') { ui.toast('This file can’t be downloaded: it contains sensitive information.', { type: 'error' }); return; }
     }
     let blob;
@@ -261,6 +265,9 @@ export function PublicLinkView() {
         </Gate>
       </PublicShell>
     );
+  }
+  if (notInOrg) {
+    return <PublicShell right={right}><Gate icon={ShieldAlert} title="You need permission" text={`This link only works for people at ${state.org.name}. Ask ${owner?.name || 'the owner'} to share it with ${me.email} directly.`} /></PublicShell>;
   }
   if (noPermission) {
     return <PublicShell right={right}><Gate icon={ShieldAlert} title="You need permission" text={`${owner?.name || 'The owner'} hasn't shared this ${item.type} with ${me.email}.`} /></PublicShell>;
@@ -390,6 +397,12 @@ export function FileRequestView() {
     const fresh = api.get();
     const freshReq = (fresh.fileRequests || []).find((r) => r.id === id);
     if (!freshReq || requestStatus(freshReq, Date.now(), fresh) !== 'active') { ui.toast('This request is no longer accepting uploads.', { type: 'error' }); return; }
+    // Uploads land with the requester's rights: they must still be able to add files to the folder,
+    // and the folder's storage (their My Folders or the team folder) must have room.
+    const asRequester = { ...fresh, meId: freshReq.createdBy };
+    const target = fresh.items[folder.id];
+    if (!target || isTrashedDeep(fresh.items, folder.id) || !canEdit(accessOf(asRequester, target))) { ui.toast('This request is no longer accepting uploads.', { type: 'error' }); return; }
+    if (quotaError(asRequester, target.space, files.reduce((n, f) => n + f.size, 0))) { ui.toast('There isn’t enough storage space for these files. Contact the requester.', { type: 'error' }); return; }
     setBusy(5);
     setFailed([]);
     const ids = [];

@@ -26,6 +26,10 @@ export function SignDocument({ requestId, signerId, onClose }) {
   const sg = r?.signers.find((x) => x.id === signerId);
   const gone = r ? docGone(state, r) : null;
   const myFields = useMemo(() => (r && sg ? r.fields.filter((f) => f.signerId === sg.id) : []), [r, sg]);
+  // Someone signed in here who isn't this signer (the sender checking the page, or another colleague): show
+  // the page read-only, and don't mark it viewed or record their device as the signer's.
+  const viewerId = state.signedOut ? null : state.meId;
+  const notSigner = !!r && !!sg && !!viewerId && (sg.userId ? viewerId !== sg.userId : viewerId === r.createdBy);
   // Reload when saved file bytes finish loading (blobsVersion), so a large upload isn't shown as missing.
   const pdf = usePdfDocument(() => requestPdf(api.get(), r), `${requestId}@${gone || ''}@${blobsVersion}`);
 
@@ -43,7 +47,7 @@ export function SignDocument({ requestId, signerId, onClose }) {
 
   // Opening the document marks it viewed (once).
   useEffect(() => {
-    if (sg?.status === 'sent' && displayStatus(r) !== 'expired' && !gone) api.markSignViewed(r.id, sg.id, { device: deviceLabel(), ip: sessionIp() });
+    if (sg?.status === 'sent' && displayStatus(r) !== 'expired' && !gone && !notSigner) api.markSignViewed(r.id, sg.id, { device: deviceLabel(), ip: sessionIp() });
   }, [sg?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expiry is derived from the clock: re-check it while the page is open.
@@ -55,7 +59,7 @@ export function SignDocument({ requestId, signerId, onClose }) {
 
   const st = r ? displayStatus(r) : null;
   const pdfMissing = !!pdf.error;
-  const canSign = !!r && !!sg && (sg.status === 'sent' || sg.status === 'viewed') && ['sent', 'viewed'].includes(r.status) && st !== 'expired' && !gone;
+  const canSign = !!r && !!sg && (sg.status === 'sent' || sg.status === 'viewed') && ['sent', 'viewed'].includes(r.status) && st !== 'expired' && !gone && !notSigner;
   // Something the signer entered that closing would throw away.
   const dirty = canSign && (!!adopted.signature || !!adopted.initials || myFields.some((f) => f.kind !== 'date' && f.kind !== 'name' && isFilled(values[f.id])));
 
@@ -220,6 +224,7 @@ export function SignDocument({ requestId, signerId, onClose }) {
           {canSign && pdfMissing && <button className="btn btn-ghost-dark" onClick={() => setDeclining(true)}>Decline</button>}
         </>
       )}>
+      {notSigner && <div className="sign-message" role="status"><strong>Preview only.</strong> You're signed in as {state.users.find((u) => u.id === viewerId)?.name || 'someone else'}; only {sg.name} can sign here.</div>}
       {r.message && canSign && !pdfMissing && <div className="sign-message"><strong>Message from the sender:</strong> {r.message}</div>}
       {finishWhy && <div id="sign-finish-why" className="sign-finish-why hide-xs" aria-live="polite">{finishWhy} to finish.</div>}
       {banner}

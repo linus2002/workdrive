@@ -91,6 +91,7 @@ function Profile() {
 
 function Preferences() {
   const { state, api } = useDrive();
+  const holds = (state.org.legalHolds || []).filter((h) => h.active).length; // reset would wipe held files
   const { toast, openDialog } = useUI();
   const s = state.settings;
   return (
@@ -107,11 +108,11 @@ function Preferences() {
       <SettingRow title="Collapse sidebar" desc="Show only icons in the navigation sidebar.">
         <Switch checked={s.sidebarCollapsed} onChange={(v) => api.updateSettings({ sidebarCollapsed: v })} label="Collapse sidebar" />
       </SettingRow>
-      <SettingRow title="Reset demo data" desc="Restore the original sample files, teams and settings.">
-        <button className="btn btn-danger-outline" onClick={() => openDialog('confirm', {
+      <SettingRow title="Reset demo data" desc={holds ? `Not available while ${holds} legal hold${holds === 1 ? ' is' : 's are'} active (Admin Console → Data retention).` : 'Restore the original sample files, teams and settings.'}>
+        <button className="btn btn-danger-outline" disabled={!!holds} onClick={() => openDialog('confirm', {
           title: 'Reset demo data?', message: 'All files, teams and settings go back to the original samples. Your changes will be lost.',
           confirmLabel: 'Reset demo data', danger: true,
-          onConfirm: () => { api.reset(); toast('Demo data restored', { type: 'success' }); },
+          onConfirm: () => { if (api.reset()) toast('Demo data restored', { type: 'success' }); else toast('Release active legal holds before resetting', { type: 'error' }); },
         })}><RotateCcw size={15} /> Reset</button>
       </SettingRow>
     </Section>
