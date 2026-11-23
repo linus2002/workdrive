@@ -3,15 +3,16 @@ import { createPortal } from 'react-dom';
 import { X, Download, Share2, MoreVertical, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Info, Star, PenLine, Save, Check, Maximize2, MessageSquare, Lock, Highlighter, Eye, EyeOff, FileDown, GalleryHorizontalEnd, PenTool, Keyboard, AlertTriangle, RotateCcw, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
-import { useItemActions } from '../../store/useItemActions';
+import { useItemActions, fileBlob } from '../../store/useItemActions';
 import { accessOf, canEdit, canCommentAccess, locationOf, isTrashedDeep, lockedByOther, openCommentCount, versionNo } from '../../store/selectors';
 import { PresenceStack } from '../files/Collaboration';
 import { getFileType } from '../../utils/fileTypes';
 import { formatSize, formatDate } from '../../utils/format';
 import { sampleSheet, sampleSlides, sampleText } from '../../utils/sampleContent';
+import { parseCsv } from '../../utils/csv';
 import { FileIcon } from '../common';
 import { DetailsContent } from '../files/FileDetailsPanel';
-import { PdfViewer, TextViewer, DocViewer, SheetViewer, SlidesViewer, VideoViewer, AudioViewer, ArchiveViewer, NoPreview, realUrl, pdfNeedsCanvas } from './Viewers';
+import { PdfViewer, TextViewer, DocViewer, SheetViewer, SlidesViewer, VideoViewer, AudioViewer, ArchiveViewer, NoPreview, realUrl, newTabUrl, pdfNeedsCanvas, isUploadedCsv } from './Viewers';
 import { MarkedImage, MarkedPdf, MarkupToolbar, useMarkup, supportsMarkup, downloadWithMarkup, useNameOf, usePageCount, TOOLS } from '../../viewing/Markup';
 import { Filmstrip, Slideshow } from '../../viewing/Gallery';
 import { signWaitingForMe } from '../../signatures/signing';
@@ -341,10 +342,26 @@ export default function FilePreview() {
   const staleVersion = !!(item && annots.length && item.annotatedVersion && item.annotatedVersion !== (item.version || 1));
   const pageCount = usePageCount(item, staleVersion);
 
+  // Move focus into the preview when it opens (keyboard and screen-reader users would otherwise stay in the
+  // file list behind it) and give it back to what had it when the preview closes.
+  const overlayRef = useRef(null);
+  const isOpen = !!(preview && item && !gone);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const before = document.activeElement;
+    if (!overlayRef.current?.contains(document.activeElement)) overlayRef.current?.focus({ preventScroll: true });
+    return () => { if (before?.isConnected && typeof before.focus === 'function') before.focus({ preventScroll: true }); };
+  }, [isOpen]);
+
   if (!preview || !item || gone) return null;
 
-  const startEdit = () => {
-    if (cat === 'spreadsheet') setSheet(sampleSheet(item).map((r) => [...r]));
+  const startEdit = async () => {
+    if (cat === 'spreadsheet' && isUploadedCsv(item)) {
+      // Edit the uploaded file's own rows, not sample data.
+      const blob = await fileBlob(item).catch(() => null);
+      if (!blob) { ui.toast("This file's contents aren't available in this browser", { type: 'error' }); return; }
+      setSheet(parseCsv(await blob.text()));
+    } else if (cat === 'spreadsheet') setSheet(sampleSheet(item).map((r) => [...r]));
     else if (cat === 'presentation') setSlides(sampleSlides(item).map((s) => ({ ...s })));
     else setDraft(item.content ?? (cat === 'document' ? sampleText(item) : ''));
     setEditing(true);
@@ -435,7 +452,7 @@ export default function FilePreview() {
   };
 
   return createPortal(
-    <div className="preview-overlay fade-in" role="dialog" aria-modal="true" aria-label={`Preview of ${item.name}`}>
+    <div className="preview-overlay fade-in" role="dialog" aria-modal="true" aria-label={`Preview of ${item.name}`} ref={overlayRef} tabIndex={-1}>
       <header className="preview-bar">
         <button className="icon-btn on-dark" onClick={close} aria-label="Close preview" data-tip="Close (Esc)"><X size={20} /></button>
         <FileIcon item={item} size={26} />
@@ -503,8 +520,8 @@ export default function FilePreview() {
               <Star size={18} fill={item.favorite ? 'currentColor' : 'none'} />
             </button>
           )}
-          {realUrl(item) && ['pdf', 'image', 'video'].includes(cat) && (
-            <a className="icon-btn on-dark hide-xs" href={realUrl(item)} target="_blank" rel="noreferrer" aria-label="Open in new tab" data-tip="Open in new tab"><Maximize2 size={17} /></a>
+          {newTabUrl(item) && ['pdf', 'image', 'video'].includes(cat) && (
+            <a className="icon-btn on-dark hide-xs" href={newTabUrl(item)} target="_blank" rel="noreferrer" aria-label="Open in new tab" data-tip="Open in new tab"><Maximize2 size={17} /></a>
           )}
           {!narrow && !item.trashed && (
             <button className={`icon-btn on-dark with-count ${info && infoTab === 'comments' ? 'active' : ''}`} onClick={() => (info && infoTab === 'comments' ? setInfo(false) : openInfoTab('comments'))} aria-label={openCommentCount(item) ? `Comments (${openCommentCount(item)} open)` : 'Comments'} data-tip="Comments">

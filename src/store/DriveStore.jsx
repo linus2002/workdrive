@@ -511,6 +511,7 @@ export function DriveStoreProvider({ children }) {
     };
 
     const folderCache = new Map();
+    const pendingFolders = new Set(); // ids from ensureFolderPath not yet in the rendered state
     const o = {
       get,
       reset() {
@@ -529,13 +530,21 @@ export function DriveStoreProvider({ children }) {
       async replaceWorkspace(saved, files) {
         const cur = get();
         const next = { ...hydrate(saved), signedOut: cur.signedOut, remember: cur.remember };
-        await fileStore.replaceAll(files);
+        // Save the state first: if it doesn't fit, nothing has been touched yet. If the files then fail to
+        // write, put the previous state back so the saved state and the file store still match.
         const r = stateStore.save(next);
         if (!r.ok) throw new Error('Browser storage is full, so the backup could not be saved.');
+        try {
+          await fileStore.replaceAll(files);
+        } catch (e) {
+          stateStore.save(cur);
+          throw e;
+        }
         blobRegistry.forEach((v) => URL.revokeObjectURL(v.url));
         blobRegistry.clear();
         for (const [id, blob] of files) blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) });
         folderCache.clear();
+        pendingFolders.clear();
         setState(next);
         setBlobsVersion((v) => v + 1);
         setPersistError(r.slim ? 'Some uploaded file contents are too large to keep after reload.' : null);
@@ -569,11 +578,17 @@ export function DriveStoreProvider({ children }) {
           const items = get().items;
           const cached = folderCache.get(key);
           const c = cached && items[cached];
-          const cacheOk = c && c.type === 'folder' && !isTrashedDeep(items, cached) && c.name === seg && c.parentId === pid;
+          // A folder created earlier in this same batch isn't in the rendered state yet: trust the cache for it.
+          const pending = cached && !c && pendingFolders.has(cached);
+          if (c) pendingFolders.delete(cached);
+          const cacheOk = pending || (c && c.type === 'folder' && !isTrashedDeep(items, cached) && c.name === seg && c.parentId === pid);
           if (cached && !cacheOk) folderCache.delete(key);
           const existing = cacheOk ? cached
             : Object.values(items).find((i) => i.type === 'folder' && !isTrashedDeep(items, i.id) && i.name === seg && i.parentId === pid && (pid ? true : i.space === space))?.id;
-          pid = existing || o.createFolder(seg, pid, space);
+          if (!existing) {
+            pid = o.createFolder(seg, pid, space);
+            pendingFolders.add(pid);
+          } else pid = existing;
           folderCache.set(key, pid);
         }
         return pid;

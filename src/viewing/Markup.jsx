@@ -503,7 +503,29 @@ export function MarkupToolbar({ m, onCancel, onSave, saving }) {
 export function MarkedImage({ item, zoom, m, show }) {
   const url = realUrl(item) || (item.thumb?.startsWith('gen:') ? genThumb(item.thumb.slice(4)) : genThumb(1));
   const imgRef = useRef(null);
+  const stageRef = useRef(null);
   const [size, setSize] = useState(null);
+  // Fit the image to the stage in pixels. Percentage max sizes don't work here: the wrapper is sized by the
+  // image itself, so they collapse (an SVG without its own width/height rendered at 0x0).
+  const [stage, setStage] = useState(null);
+  const [natural, setNatural] = useState(null);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const h = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      setStage((p) => (p && p.w === w && p.h === h ? p : { w: Math.max(1, w), h: Math.max(1, h) }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const nat = natural?.url === url ? natural : null; // ignore the previous image's size while a new one loads
+  const fit = stage && nat ? Math.min(1, stage.w / natural.w, stage.h / natural.h) : null;
+  const imgStyle = fit ? { width: Math.round(nat.w * fit), height: Math.round(nat.h * fit), maxWidth: 'none', maxHeight: 'none' } : undefined;
   useEffect(() => {
     const el = imgRef.current;
     if (!el) return undefined;
@@ -514,9 +536,15 @@ export function MarkedImage({ item, zoom, m, show }) {
   }, [url]);
   const list = m?.active ? m.list : (show ? item.annotations || [] : []);
   return (
-    <div className="viewer-center checker">
+    <div className="viewer-center checker" ref={stageRef}>
       <div className="markup-wrap" style={{ transform: `scale(${zoom})` }}>
-        <img ref={imgRef} src={url} alt={item.name} className="preview-img markup-img" draggable={false} onLoad={() => setSize({ w: imgRef.current.clientWidth, h: imgRef.current.clientHeight })} />
+        <img ref={imgRef} src={url} alt={item.name} className="preview-img markup-img" style={imgStyle} draggable={false}
+          onLoad={() => {
+            const img = imgRef.current;
+            // SVGs without their own size report 0: fall back to a 16:10 box that fills the stage.
+            setNatural(img.naturalWidth && img.naturalHeight ? { url, w: img.naturalWidth, h: img.naturalHeight } : { url, w: 1600, h: 1000 });
+            setSize({ w: img.clientWidth, h: img.clientHeight });
+          }} />
         {size && (list.length > 0 || m?.active) && <AnnotationLayer page={1} w={size.w} h={size.h} list={list} m={m} />}
       </div>
     </div>

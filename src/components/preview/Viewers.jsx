@@ -11,8 +11,21 @@ import { sampleSheet, sampleSlides, sampleText, sampleArchive } from '../../util
 import { FileGlyph } from '../common';
 import { fileBlob } from '../../store/useItemActions';
 import { readZipIndex, safeZipPath, ZipError } from '../../utils/zip';
+import { parseCsv } from '../../utils/csv';
 
 export const realUrl = (item) => blobRegistry.get(item.id)?.url || item.dataUrl || null;
+
+/**
+ * URL that is safe to open in a new tab, or null. A blob: or data: URL runs with this app's origin, so only
+ * types the browser displays without running page scripts are allowed (no SVG, HTML or XML, whatever the extension).
+ */
+const NEW_TAB_TYPES = /^(application\/pdf|image\/(png|jpeg|gif|webp|bmp|avif)|video\/(mp4|webm|ogg|quicktime))$/i;
+export function newTabUrl(item) {
+  const entry = blobRegistry.get(item.id);
+  if (entry) return NEW_TAB_TYPES.test(entry.blob?.type || '') ? entry.url : null;
+  const m = /^data:([^;,]+)/i.exec(item.dataUrl || '');
+  return m && NEW_TAB_TYPES.test(m[1]) ? item.dataUrl : null;
+}
 
 export function ImageViewer({ item, zoom }) {
   const url = realUrl(item) || (item.thumb?.startsWith('gen:') ? genThumb(item.thumb.slice(4)) : genThumb(1));
@@ -78,9 +91,13 @@ function PdfFrame({ url, title }) {
   return <iframe className="pdf-frame" src={url} title={title} />;
 }
 
-export function PdfViewer({ item, zoom, onDownload }) {
+/**
+ * contained: render pages ourselves even where the browser has a PDF viewer. Used on public link and embed
+ * pages, where the browser viewer's own Download / Print buttons would skip the link's download rules.
+ */
+export function PdfViewer({ item, zoom, onDownload, contained = false }) {
   const url = realUrl(item);
-  const [canvas] = useState(pdfNeedsCanvas);
+  const [canvas] = useState(() => contained || pdfNeedsCanvas());
   if (url && canvas) return <PdfCanvasViewer item={item} zoom={zoom} onDownload={onDownload} />;
   if (url) return <PdfFrame url={url} title={item.name} />;
   // Uploaded files carry a mime type; if their bytes are missing, say so instead of showing sample text.
@@ -158,10 +175,32 @@ export function DocViewer({ item, editing, draft, setDraft, zoom }) {
 
 const col = (i) => String.fromCharCode(65 + (i % 26));
 
+/** Rows of an uploaded CSV read from its bytes: undefined while loading, null if unavailable. */
+function useCsvRows(item, active) {
+  const { blobsVersion } = useDrive();
+  const [state, setState] = useState({ key: null, rows: undefined });
+  const key = active ? `${item.id}@${item.version || 1}#${blobsVersion}` : null;
+  useEffect(() => {
+    if (!key) return undefined;
+    let alive = true;
+    fileBlob(item).then((b) => (b ? b.text() : null)).then((t) => { if (alive) setState({ key, rows: t == null ? null : parseCsv(t) }); })
+      .catch(() => { if (alive) setState({ key, rows: null }); });
+    return () => { alive = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- key identifies the item version
+  return state.key === key ? state.rows : undefined;
+}
+
+/** True for a CSV the user uploaded (its rows come from the file, not item.sheet or sample data). */
+export const isUploadedCsv = (item) => item.ext === 'csv' && !item.sheet && (!!realUrl(item) || !!item.mime);
+
 export function SheetViewer({ item, editing, sheet, setSheet }) {
   const uploadedBinary = !!realUrl(item) && !item.sheet;
+  const csv = isUploadedCsv(item);
+  const csvRows = useCsvRows(item, csv && !editing);
   if (uploadedBinary && !['csv'].includes(item.ext)) return <NoPreview item={item} text="Uploaded spreadsheets can't be rendered in this prototype. Download to open in a spreadsheet app." />;
-  const rows = editing ? sheet : sampleSheet(item);
+  if (csv && !editing && csvRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (csv && !editing && csvRows === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
+  const rows = editing ? sheet : csv ? csvRows : sampleSheet(item);
   const width = Math.max(6, ...rows.map((r) => r.length));
   const height = Math.max(editing ? rows.length : 18, rows.length);
   const set = (r, c, v) => setSheet((s) => {
@@ -270,9 +309,13 @@ export function SlidesViewer({ item, editing, slides, setSlides }) {
   );
 }
 
-export function VideoViewer({ item }) {
+/** contained: hide the browser's own download / picture-in-picture options (public link and embed pages). */
+export function VideoViewer({ item, contained = false }) {
   const url = realUrl(item);
-  if (url) return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay /></div>;
+  if (url) {
+    const lock = contained ? { controlsList: 'nodownload noremoteplayback', disablePictureInPicture: true, onContextMenu: (e) => e.preventDefault() } : {};
+    return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay {...lock} /></div>;
+  }
   return (
     <div className="viewer-center dark">
       <div className="video-placeholder">

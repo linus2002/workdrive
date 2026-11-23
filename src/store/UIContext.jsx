@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { uid } from '../utils/format';
 
@@ -24,6 +24,8 @@ export function UIProvider({ children }) {
   const locRef = useRef(location);
   locRef.current = location;
   const closingRef = useRef(null);
+  const openingRef = useRef(null); // { id, from: location key } of the last preview push
+  useEffect(() => { openingRef.current = null; }, [location.key]); // the push landed (or we navigated away)
   const [siblings, setSiblings] = useState([]);
   const previewId = new URLSearchParams(location.search).get('preview');
   const preview = useMemo(() => (previewId ? { id: previewId, siblings } : null), [previewId, siblings]);
@@ -107,6 +109,10 @@ export function UIProvider({ children }) {
     setSiblings(sibs);
     const loc = locRef.current;
     if (new URLSearchParams(loc.search).get('preview') === id) return; // already open (e.g. the second click of a double-click)
+    // Opened a moment ago but the location hasn't re-rendered yet: pushing again would stack history entries,
+    // so Escape / Back would only pop one of them and the preview would stay open.
+    if (openingRef.current && openingRef.current.id === id && openingRef.current.from === loc.key) return;
+    openingRef.current = { id, from: loc.key };
     navigate({ pathname: loc.pathname, search: withParam(loc.search, 'preview', id) }, { state: { previewPushed: true } });
   }, [navigate]);
   const closePreview = useCallback(() => {

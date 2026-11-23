@@ -5,6 +5,7 @@ import { versionNo } from '../store/selectors';
 import { getFileType, genThumb } from '../utils/fileTypes';
 import { formatDateTime } from '../utils/format';
 import { sampleSheet, sampleSlides } from '../utils/sampleContent';
+import { parseCsv } from '../utils/csv';
 import { extractText } from '../search/extract';
 import { Modal } from '../components/common';
 import { diffLines, diffSheets, foldRows } from './diff';
@@ -20,23 +21,13 @@ function sideItem(item, ref) {
   };
 }
 
-const parseCsv = (text) => text.replace(/\r/g, '').split('\n').filter((l, i, a) => l || i < a.length - 1).map((l) => {
-  const out = []; let cur = ''; let q = false;
-  for (let i = 0; i < l.length; i++) {
-    const c = l[i];
-    if (q) { if (c === '"' && l[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
-    else if (c === '"') q = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c;
-  }
-  out.push(cur);
-  return out;
-});
-
 /** Comparable contents: { kind: 'text'|'sheet'|'image'|'none', text?, rows?, url?, note? } */
 async function loadComparable(it) {
   const cat = getFileType(it.ext).category;
   const reg = blobRegistry.get(it.id);
   if (cat === 'image') return { kind: 'image', url: reg?.url || it.dataUrl || genThumb(it.thumb?.replace('gen:', '') || 1) };
   if (cat === 'spreadsheet') {
+    if (it.ext === 'csv' && !it.sheet && it.mime && !reg) return { kind: 'none', note: "This version's contents aren't available in this browser." };
     if (it.sheet || (!reg && !it.dataUrl)) return { kind: 'sheet', rows: sampleSheet(it) };
     if (it.ext === 'csv' && reg) return { kind: 'sheet', rows: parseCsv(await reg.blob.text()) };
   }

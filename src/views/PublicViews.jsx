@@ -126,15 +126,16 @@ export function Watermark({ text }) {
   return <div className="watermark" style={{ backgroundImage: bg }} aria-hidden="true" />;
 }
 
+/** Viewer for public link and embed pages: downloads only go through our own button, which applies the link's rules. */
 export function viewerFor(item, onDownload) {
   switch (getFileType(item.ext).category) {
     case 'image': return <ImageViewer item={item} zoom={1} />;
-    case 'pdf': return <PdfViewer item={item} zoom={1} />;
+    case 'pdf': return <PdfViewer item={item} zoom={1} contained />;
     case 'text': return <TextViewer item={item} editing={false} />;
     case 'document': return <DocViewer item={item} editing={false} zoom={1} />;
     case 'spreadsheet': return <SheetViewer item={item} editing={false} />;
     case 'presentation': return <SlidesViewer item={item} editing={false} />;
-    case 'video': return <VideoViewer item={item} />;
+    case 'video': return <VideoViewer item={item} contained />;
     case 'audio': return <AudioViewer item={item} />;
     case 'archive': return <ArchiveViewer item={item} />;
     default: return <NoPreview item={item} onDownload={onDownload} />;

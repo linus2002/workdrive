@@ -344,11 +344,13 @@ export default function FileBrowser({
   useEffect(() => {
     const onKey = (e) => {
       if (ui.dialog || ui.preview || ui.menu) return;
-      const el = document.activeElement;
-      const tag = el?.tagName;
-      // Ignore keys while typing, but not when focus is just on a selection checkbox.
-      const typing = tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || el?.isContentEditable;
-      if (typing) return;
+      // Ignore keys while typing, but not when focus is just on a selection checkbox. Check the event target
+      // too: a field can blur itself while handling the key (the search box does on Enter / Escape).
+      const isTypingEl = (el) => {
+        const tag = el?.tagName;
+        return tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || !!el?.isContentEditable;
+      };
+      if (isTypingEl(document.activeElement) || isTypingEl(e.target)) return;
       if (document.querySelector('.popover')) return;
       const idx = processed.findIndex((i) => i.id === focusId);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {

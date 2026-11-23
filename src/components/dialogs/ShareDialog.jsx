@@ -210,7 +210,7 @@ export default function ShareDialog({ id, onClose }) {
   const ROLE_HELP = { viewer: 'Can view and download', commenter: 'Can view and comment', editor: 'Can view, edit and share' };
 
   return (
-    <Modal title={<span className="share-title">Share <span className="share-item"><FileIcon item={item} size={20} /> <span className="truncate">{item.name}</span></span></span>}
+    <Modal title={<span className="share-title"><span className="share-word">Share</span> <span className="share-item"><FileIcon item={item} size={20} /> <span className="truncate">{item.name}</span></span></span>}
       onClose={requestClose} width={560} icon={<Share2 size={20} />}
       footer={<>
         <button className="btn btn-secondary" onClick={copy}><Link2 size={15} /> Copy link</button>

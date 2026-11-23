@@ -1798,3 +1798,27 @@ button.item-chip:hover { border-color: var(--primary); color: var(--primary); }
 .storage-mini:hover { background: var(--bg-hover); }
 .fav-star-wrap { display: inline-flex; flex: none; }
 .dot-badge.wide { min-width: 20px; }
+
+/* ---------- audit fixes: high-priority layout ---------- */
+.preview-overlay:focus { outline: none; } /* focused on open so keys and screen readers land in the preview */
+/* Share dialog title: keep the word "Share" whole; the file name truncates instead. */
+.share-title .share-word { flex: none; overflow-wrap: normal; }
+.share-title .share-item { flex: 0 1 auto; }
+
+@media (max-width: 960px) {
+  /* Settings / Admin: the content column fills the screen instead of growing to its widest child. */
+  .settings-layout { align-items: stretch; }
+  .settings-content, .settings-content.wide { width: 100%; max-width: none; min-width: 0; }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  /* The closed drawer is off-screen: hide it so Tab doesn't walk through invisible links.
+     visibility switches after the slide-out so the closing animation still shows. */
+  .sidebar:not(.mobile-open) { visibility: hidden; transition: transform 0.2s ease, visibility 0s linear 0.2s; }
+  .sidebar.mobile-open { visibility: visible; transition: transform 0.2s ease; }
+  /* Admin / Settings sections: header buttons wrap under the title; controls never get wider than the screen. */
+  .settings-card-head { flex-wrap: wrap; }
+  .setting-control { max-width: 100%; min-width: 0; }
+  .setting-control .select, .setting-control .input { max-width: 100%; }
+}
