@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { USERS, TEAMS, PRIORITY_TEAMS, ITEMS, NOTIFICATIONS, AUDIT, ORG, ME, FILE_REQUESTS, normalizeLink, TASKS, APPROVALS, PRODUCTIVITY_NOTIFICATIONS, LEGAL_HOLDS, SESSIONS, SIGN_REQUESTS, SIGN_ITEM_NAMES, SIGN_NOTIFICATIONS, GUEST_USERS, GUEST_SHARES, GUEST_MEMBERS, guestShareEntry, guestMemberEntry, BRANDING, SAMPLE_LINK_SECRET_HASH } from '../data/mockData';
 import { computeStatus, SIGNER_COLORS } from '../signatures/status';
 import { uid } from '../utils/format';
-import { descendantIds, isTrashedDeep, uniqueName, ancestors, lockedByOther, holdOn, blocksPermanentDelete, accessOf, canEdit, teamRoleOf, quotaError, activeHolds, canDownload } from './selectors';
+import { descendantIds, childIds, lockedInside, isTrashedDeep, uniqueName, ancestors, lockedByOther, holdOn, blocksPermanentDelete, accessOf, canEdit, teamRoleOf, quotaError, activeHolds, canDownload } from './selectors';
 import { deviceLabel, sessionIp } from '../utils/sharing';
 import { DEFAULT_OFFBOARD } from '../offboard/offboard';
 
@@ -274,18 +274,83 @@ export function portableState(s) {
 /** Uploaded file bytes, keyed by item id. Backed by IndexedDB so real files survive reloads. */
 export const blobRegistry = new Map();
 
+/**
+ * Writing file bytes to IndexedDB failed (quota, private mode, blocked storage). The store shows a warning,
+ * because those files only live in memory and are gone after a reload.
+ */
+const blobErrorListeners = new Set();
+function reportBlobWriteError() { blobErrorListeners.forEach((fn) => fn()); }
+function storeBlob(id, blob) { return fileStore.put(id, blob).catch(reportBlobWriteError); }
+
 /** Register an uploaded file's bytes (in memory + IndexedDB). */
 export function registerBlob(id, blob) {
   const prev = blobRegistry.get(id);
   blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) });
   // Copies share a registry entry; only revoke the old URL when nothing else still points at it.
   if (prev?.url && ![...blobRegistry.values()].includes(prev)) URL.revokeObjectURL(prev.url);
-  fileStore.put(id, blob).catch(() => {});
+  storeBlob(id, blob);
 }
 
 /** Resolves once file bytes saved in IndexedDB have been loaded after startup (see fileBlob). */
 let markBlobsReady;
 export const blobsReady = new Promise((resolve) => { markBlobsReady = resolve; });
+let blobsLoaded = false;
+blobsReady.then(() => { blobsLoaded = true; });
+
+/** A data: URL as a Blob (to move embedded file data into the file store). */
+function dataUrlToBlob(url) {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url || '');
+  if (!m) return null;
+  try {
+    if (!m[2]) return new Blob([decodeURIComponent(m[3])], { type: m[1] || 'application/octet-stream' });
+    const bin = atob(m[3]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+  } catch { return null; }
+}
+
+/**
+ * Three-way merge for a save from another tab that arrives while this tab has unsaved changes.
+ * base: what both tabs last agreed on; ours: this tab now; theirs: what the other tab saved.
+ * Whatever this tab changed since base wins; everything else comes from theirs. Maps (items, ...) merge
+ * per key; id-keyed lists (audit, journal, notifications, ...) merge per entry.
+ */
+const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+function mergeMap(base = {}, ours = {}, theirs = {}) {
+  const out = { ...theirs };
+  for (const k of new Set([...Object.keys(ours), ...Object.keys(base)])) {
+    if (ours[k] === base[k]) continue;
+    if (!(k in ours)) delete out[k];
+    else out[k] = ours[k];
+  }
+  return out;
+}
+function mergeList(base = [], ours = [], theirs = []) {
+  if (![...ours, ...theirs].every((e) => e && typeof e === 'object' && 'id' in e)) return ours;
+  const baseById = new Map(base.map((e) => [e.id, e]));
+  const oursById = new Map(ours.map((e) => [e.id, e]));
+  const removed = new Set(base.filter((e) => !oursById.has(e.id)).map((e) => e.id));
+  const changed = new Map(ours.filter((e) => baseById.has(e.id) && baseById.get(e.id) !== e).map((e) => [e.id, e]));
+  const theirIds = new Set(theirs.map((e) => e.id));
+  const added = ours.filter((e) => !baseById.has(e.id) && !theirIds.has(e.id));
+  const kept = theirs.filter((e) => !removed.has(e.id)).map((e) => changed.get(e.id) || e);
+  // New entries go where this tab put them: lists kept newest-first get them at the front.
+  const front = added.length && ours.indexOf(added[0]) === 0;
+  return front ? [...added, ...kept] : [...kept, ...added];
+}
+function mergeStates(base, ours, theirs) {
+  const out = { ...theirs };
+  for (const k of Object.keys(ours)) {
+    if (ours[k] === base?.[k]) continue;
+    const b = base?.[k]; const t = theirs[k];
+    if (isPlainObject(ours[k]) && isPlainObject(t) && isPlainObject(b)) out[k] = mergeMap(b, ours[k], t);
+    else if (Array.isArray(ours[k]) && Array.isArray(t) && Array.isArray(b)) out[k] = mergeList(b, ours[k], t);
+    else out[k] = ours[k];
+  }
+  return out;
+}
+export const __test = { mergeStates };
 
 // ---- Change journal: what each item looked like before every change (powers "restore a folder to a date") ----
 const JOURNAL_FIELDS = ['name', 'parentId', 'space', 'trashed', 'version'];
@@ -333,6 +398,15 @@ function unregisterBlob(id) {
   fileStore.delete(id).catch(() => {});
 }
 
+/** Replace a registry entry with bytes read back from IndexedDB (revoking the old URL if nothing shares it). */
+function replaceRegistered(id, blob) {
+  const prev = blobRegistry.get(id);
+  blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) });
+  if (prev?.url && ![...blobRegistry.values()].includes(prev)) URL.revokeObjectURL(prev.url);
+}
+
+const ORPHAN_GRACE_MS = 15000;
+
 const StoreCtx = createContext(null);
 
 export function DriveStoreProvider({ children }) {
@@ -340,7 +414,16 @@ export function DriveStoreProvider({ children }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const [persistError, setPersistError] = useState(null);
+  const [blobError, setBlobError] = useState(null);
   const [blobsVersion, setBlobsVersion] = useState(0);
+  // The state both this tab and the saved copy agree on: the base for merging another tab's save.
+  const lastSaved = useRef(state);
+  const writePending = useRef(false);
+  useEffect(() => {
+    const onError = () => setBlobError('Some uploaded files couldn’t be saved in this browser (storage is full or blocked). They will be lost when the page is reloaded.');
+    blobErrorListeners.add(onError);
+    return () => { blobErrorListeners.delete(onError); };
+  }, []);
 
   // Restore uploaded file bytes from IndexedDB, then re-render so viewers pick them up.
   useEffect(() => {
@@ -348,12 +431,24 @@ export function DriveStoreProvider({ children }) {
     fileStore.loadAll().then((entries) => {
       if (!alive) return;
       const known = stateRef.current.items;
+      const orphans = [];
       for (const [id, blob] of entries) {
-        if (!known[id.split('@')[0]]) { fileStore.delete(id).catch(() => {}); continue; } // orphan (version blobs are keyed id@vN)
+        if (!known[id.split('@')[0]]) { orphans.push(id); continue; } // version blobs are keyed id@vN
         if (!blobRegistry.has(id)) blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) });
       }
       setBlobsVersion((v) => v + 1);
       markBlobsReady();
+      // Another tab may have stored an upload whose state it hasn't saved yet (saves are debounced):
+      // wait, then only delete bytes that neither this tab nor the latest saved state knows about.
+      if (orphans.length) {
+        setTimeout(() => {
+          const saved = stateStore.load()?.items || {};
+          for (const id of orphans) {
+            const base = id.split('@')[0];
+            if (!stateRef.current.items[base] && !saved[base] && !blobRegistry.has(id)) fileStore.delete(id).catch(() => {});
+          }
+        }, ORPHAN_GRACE_MS);
+      }
     }).catch(() => markBlobsReady());
     return () => { alive = false; };
   }, []);
@@ -364,13 +459,31 @@ export function DriveStoreProvider({ children }) {
   useEffect(() => stateStore.subscribe((saved) => {
     let next;
     try { next = hydrate(saved); } catch { return; }
-    fromOtherTab.current = next;
-    setState(next);
+    const mine = stateRef.current;
+    // Files whose contents the other tab replaced (new version, restore): our cached bytes are stale.
+    const stale = new Set();
+    for (const [id, it] of Object.entries(next.items || {})) {
+      const was = mine.items?.[id];
+      if (was && ((was.version || 1) !== (it.version || 1) || was.size !== it.size || was.modifiedAt !== it.modifiedAt)) stale.add(id);
+    }
+    if (writePending.current && mine !== lastSaved.current) {
+      // Unsaved changes here: keep them on top of the other tab's save (it gets written back shortly).
+      const merged = mergeStates(lastSaved.current, mine, next);
+      lastSaved.current = next;
+      setState(merged);
+    } else {
+      fromOtherTab.current = next;
+      lastSaved.current = next;
+      setState(next);
+    }
     fileStore.loadAll().then((entries) => {
-      let added = 0;
-      for (const [id, blob] of entries) if (!blobRegistry.has(id)) { blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) }); added++; }
-      if (added) setBlobsVersion((v) => v + 1);
-    });
+      let changed = 0;
+      for (const [id, blob] of entries) {
+        if (!blobRegistry.has(id)) { blobRegistry.set(id, { blob, url: URL.createObjectURL(blob) }); changed++; }
+        else if (stale.has(id)) { replaceRegistered(id, blob); changed++; }
+      }
+      if (changed) setBlobsVersion((v) => v + 1);
+    }).catch(() => {});
   }), []);
 
   // Persist (debounced), with a synchronous flush when the page is hidden/unloaded
@@ -383,19 +496,38 @@ export function DriveStoreProvider({ children }) {
   }, []);
   useEffect(() => {
     // State that just arrived from another tab is already saved; writing it back would echo between tabs.
-    if (state === fromOtherTab.current) { persistNow.current = null; return undefined; }
+    if (state === fromOtherTab.current) { persistNow.current = null; writePending.current = false; return undefined; }
     let done = false;
     const write = () => {
       if (done) return;
       done = true;
+      writePending.current = false;
       // Quota exceeded: the store retries without embedded file data (slim) before giving up.
       const r = stateStore.save(state);
-      setPersistError(!r.ok ? 'Browser storage is full. Changes will not persist.' : r.slim ? 'Some uploaded file contents are too large to keep after reload.' : null);
+      if (r.ok) lastSaved.current = state;
+      if (r.slim) moveEmbeddedToFileStore(state);
+      setPersistError(!r.ok ? 'Browser storage is full. Changes will not persist.'
+        : r.slim ? 'Browser storage is nearly full: older activity history was shortened to fit.' : null);
     };
     persistNow.current = write;
+    writePending.current = true;
     const t = setTimeout(write, 250);
     return () => clearTimeout(t);
   }, [state]);
+
+  /**
+   * A slim save drops embedded data: URLs (small uploads, some old versions) from the saved state. Make sure
+   * those bytes are in the file store first, or they'd be gone after a reload.
+   */
+  const moveEmbeddedToFileStore = (s) => {
+    for (const it of Object.values(s.items || {})) {
+      if (it.dataUrl && !blobRegistry.has(it.id)) { const b = dataUrlToBlob(it.dataUrl); if (b) registerBlob(it.id, b); }
+      for (const v of it.versions || []) {
+        const key = versionKey(it.id, v.no);
+        if (v.dataUrl && !blobRegistry.has(key)) { const b = dataUrlToBlob(v.dataUrl); if (b) registerBlob(key, b); }
+      }
+    }
+  };
 
   // Every state change goes through here; item changes are recorded in the change journal (see journalChanges).
   const update = useCallback((fn) => setState((s) => journalChanges(s, fn(s) || s)), []);
@@ -655,18 +787,24 @@ export function DriveStoreProvider({ children }) {
         update((s) => patchItems(s, { [id]: { lastOpened: Date.now() } }));
       },
 
-      /** Returns { moved, skipped, denied, held, locked } (skipped counts everything not moved). */
+      /**
+       * Returns { moved, skipped, denied, held, locked, lostAccess } (skipped counts everything not moved).
+       * lostAccess: the move would leave you without access (e.g. someone else's file, seen through a
+       * shared folder, moved into your My Folders).
+       */
       moveItems(ids, targetParentId, targetSpace) {
         const snap = get();
-        const result = { moved: 0, skipped: 0, denied: 0, held: 0, locked: 0 };
+        const result = { moved: 0, skipped: 0, denied: 0, held: 0, locked: 0, lostAccess: 0 };
         const why = (s, id) => {
           const it = s.items[id];
           if (!it) return 'gone';
           if (id === targetParentId || (it.type === 'folder' && targetParentId && descendantIds(s.items, id).includes(targetParentId))) return 'invalid';
           if (it.parentId === (targetParentId || null) && it.space === targetSpace) return 'same';
-          if (lockedByOther(s, it)) return 'locked';
+          if (lockedInside(s, id)) return 'locked';
           if (!canEdit(accessOf(s, it)) || !canWriteTo(s, targetParentId, targetSpace)) return 'denied';
           if (leavesHold(s, id, targetParentId, targetSpace)) return 'held';
+          const after = { ...s, items: { ...s.items, [id]: { ...it, parentId: targetParentId || null, space: targetSpace } } };
+          if (accessOf(after, after.items[id]) === 'none') return 'lostAccess';
           return null;
         };
         for (const id of ids) {
@@ -709,7 +847,7 @@ export function DriveStoreProvider({ children }) {
           const src = snap.items[srcId];
           const copyId = uid('f');
           plan.push({ srcId, copyId, parentId: parentId || null, isRoot });
-          Object.values(snap.items).filter((c) => c.parentId === srcId && !c.trashed).forEach((c) => walk(c.id, copyId, false));
+          childIds(snap.items, srcId).filter((c) => !snap.items[c].trashed).forEach((c) => walk(c, copyId, false));
           return src;
         };
         roots.forEach((id) => walk(id, targetParentId, true));
@@ -717,7 +855,7 @@ export function DriveStoreProvider({ children }) {
         const qErr = quotaError(snap, targetSpace, bytes);
         if (qErr) { o.copyItems.lastError = qErr; return 0; }
         for (const p of plan) {
-          if (blobRegistry.has(p.srcId)) { blobRegistry.set(p.copyId, blobRegistry.get(p.srcId)); fileStore.put(p.copyId, blobRegistry.get(p.srcId).blob).catch(() => {}); }
+          if (blobRegistry.has(p.srcId)) { blobRegistry.set(p.copyId, blobRegistry.get(p.srcId)); storeBlob(p.copyId, blobRegistry.get(p.srcId).blob); }
         }
         update((s) => {
           const items = { ...s.items };
@@ -744,14 +882,14 @@ export function DriveStoreProvider({ children }) {
         for (const id of ids) {
           const it = snap.items[id];
           if (!it) continue;
-          if (lockedByOther(snap, it)) res.locked++;
+          if (lockedInside(snap, id)) res.locked++;
           else if (!canEdit(accessOf(snap, it)) && it.ownerId !== snap.meId) res.denied++;
           else res.trashed++;
         }
         update((s) => {
           const now = Date.now();
           const patches = {};
-          const ok = ids.filter((id) => s.items[id] && !lockedByOther(s, s.items[id]) && (canEdit(accessOf(s, s.items[id])) || s.items[id].ownerId === s.meId));
+          const ok = ids.filter((id) => s.items[id] && !lockedInside(s, id) && (canEdit(accessOf(s, s.items[id])) || s.items[id].ownerId === s.meId));
           if (!ok.length) return s;
           for (const id of ok) patches[id] = { trashed: true, trashedAt: now, trashedBy: s.meId, favorite: false };
           const names = ok.map((id) => s.items[id]?.name).filter(Boolean);
@@ -790,12 +928,19 @@ export function DriveStoreProvider({ children }) {
         return relocated;
       },
 
-      /** Permanently delete items. Anything covered by a legal hold is kept. Returns { deleted, held }. */
+      /**
+       * Permanently delete items. Anything covered by a legal hold, or holding a file someone else has
+       * checked out, is kept. Returns { deleted, held, locked }.
+       */
       deleteForever(requested, { reason = '' } = {}) {
         const snap = get();
-        const ids = requested.filter((id) => snap.items[id] && !blocksPermanentDelete(snap, id));
-        const held = requested.length - ids.length;
-        if (!ids.length) return { deleted: 0, held };
+        const present = requested.filter((id) => snap.items[id]);
+        const heldIds = present.filter((id) => blocksPermanentDelete(snap, id));
+        const lockedIds = present.filter((id) => !heldIds.includes(id) && lockedInside(snap, id));
+        const ids = present.filter((id) => !heldIds.includes(id) && !lockedIds.includes(id));
+        const held = heldIds.length;
+        const locked = lockedIds.length;
+        if (!ids.length) return { deleted: 0, held, locked };
         for (const id of ids) for (const d of [id, ...descendantIds(snap.items, id)]) (snap.items[d]?.versions || []).forEach((v) => unregisterBlob(versionKey(d, v.no)));
         const all = ids.flatMap((id) => [id, ...descendantIds(snap.items, id)]);
         all.forEach((d) => unregisterBlob(d));
@@ -811,10 +956,10 @@ export function DriveStoreProvider({ children }) {
           const ns = cancelRequestsFor({ ...s, items }, all, 'The document was permanently deleted');
           return log(ns, 'Permanently deleted', names.length === 1 ? names[0] : `${names.length} items`, reason);
         });
-        return { deleted: ids.length, held };
+        return { deleted: ids.length, held, locked };
       },
 
-      /** Returns { deleted, held }. */
+      /** Returns { deleted, held, locked }. */
       emptyTrash() {
         const ids = Object.values(get().items).filter((i) => i.trashed && (i.ownerId === get().meId || i.trashedBy === get().meId)).map((i) => i.id);
         return o.deleteForever(ids);
@@ -1018,6 +1163,8 @@ export function DriveStoreProvider({ children }) {
       // ---- Version history ----
       /** Save an in-place edit (content / sheet / slides) as a new version. Returns false if blocked by a lock. */
       saveVersion(id, patch, note = '') {
+        // Right after a reload the previous bytes may not be loaded yet; snapshotting now would lose them.
+        if (!blobsLoaded) { blobsReady.then(() => o.saveVersion(id, patch, note)); return !lockedByOther(get(), get().items[id]); }
         const it = get().items[id];
         if (!it || lockedByOther(get(), it)) return false;
         const snap = snapshotVersion(it);
@@ -1029,6 +1176,7 @@ export function DriveStoreProvider({ children }) {
 
       /** Replace a file's contents with an uploaded File, keeping the old contents as a version. */
       uploadVersion(id, file, { content = null, dataUrl = null } = {}, note = '') {
+        if (!blobsLoaded) { blobsReady.then(() => o.uploadVersion(id, file, { content, dataUrl }, note)); return !lockedByOther(get(), get().items[id]); }
         const it = get().items[id];
         if (!it || lockedByOther(get(), it)) return false;
         if (quotaError(get(), it.space, Math.max(0, file.size - (it.size || 0)))) return false;
@@ -1040,12 +1188,13 @@ export function DriveStoreProvider({ children }) {
 
       /** Make an older version current again. The current contents are kept as a version too. */
       restoreVersion(id, versionId) {
+        if (!blobsLoaded) { blobsReady.then(() => o.restoreVersion(id, versionId)); return !lockedByOther(get(), get().items[id]); }
         const it = get().items[id];
         const v = it?.versions?.find((x) => x.id === versionId);
         if (!it || !v || lockedByOther(get(), it)) return false;
         const snap = snapshotVersion(it);
         const old = blobRegistry.get(versionKey(id, v.no));
-        if (v.hasBlob && old) registerBlob(id, old.blob); else unregisterBlob(id);
+        if (old) registerBlob(id, old.blob); else unregisterBlob(id);
         commitVersion(id, snap, { size: v.size, mime: v.mime ?? it.mime, content: v.content, sheet: v.sheet, slides: v.slides, dataUrl: v.dataUrl }, 'Version restored', `Restored version ${v.no}`, `Restored from version ${v.no}`);
         return true;
       },
@@ -1816,7 +1965,8 @@ export function DriveStoreProvider({ children }) {
     else if (mySession.endedAt && revokedRef.current !== mySession.id) { revokedRef.current = mySession.id; api.signOut('revoked'); }
   }, [state.signedOut, mySession, api]);
 
-  const value = useMemo(() => ({ state, api, persistError, blobsVersion }), [state, api, persistError, blobsVersion]);
+  const shownError = persistError || blobError;
+  const value = useMemo(() => ({ state, api, persistError: shownError, blobsVersion }), [state, api, shownError, blobsVersion]);
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }
 

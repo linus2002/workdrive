@@ -30,13 +30,36 @@ export function ancestors(items, id) {
   return out;
 }
 
+/**
+ * parentId -> child ids, built once per items object (state updates replace the object, so the cache
+ * can't go stale). Makes folder walks O(descendants) instead of O(all items x descendants).
+ */
+const childIndexCache = new WeakMap();
+export function childIndex(items) {
+  let idx = childIndexCache.get(items);
+  if (!idx) {
+    idx = new Map();
+    for (const it of Object.values(items)) {
+      const k = it.parentId ?? null;
+      const list = idx.get(k);
+      if (list) list.push(it.id); else idx.set(k, [it.id]);
+    }
+    childIndexCache.set(items, idx);
+  }
+  return idx;
+}
+
+/** Ids of an item's direct children (trashed ones included). */
+export const childIds = (items, id) => childIndex(items).get(id) || [];
+
 export function descendantIds(items, id) {
-  const all = Object.values(items);
+  const idx = childIndex(items);
   const out = [];
   const stack = [id];
   while (stack.length) {
-    const pid = stack.pop();
-    for (const it of all) if (it.parentId === pid) { out.push(it.id); stack.push(it.id); }
+    const kids = idx.get(stack.pop());
+    if (!kids) continue;
+    for (const k of kids) { out.push(k); stack.push(k); }
   }
   return out;
 }
@@ -141,6 +164,15 @@ export const canCommentAccess = (access) => canEdit(access) || access === 'comme
 
 /** The file is checked out by someone other than the current user. */
 export const lockedByOther = (state, item) => !!(item?.lock && item.lock.by !== state.meId);
+
+/** First item at or inside this one that someone else has checked out (moving/deleting the folder would take it along). */
+export const lockedInside = (state, id) => {
+  const it = state.items[id];
+  if (lockedByOther(state, it)) return it;
+  if (it?.type !== 'folder') return null;
+  for (const d of descendantIds(state.items, id)) if (lockedByOther(state, state.items[d])) return state.items[d];
+  return null;
+};
 
 /** Can the current user change this item (edit access and not locked by someone else)? */
 export const canModify = (state, item) => canEdit(accessOf(state, item)) && !lockedByOther(state, item);

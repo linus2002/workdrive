@@ -58,7 +58,7 @@ export function useDropTarget(folderId, space, enabled = true) {
           const origin = ids.map((id) => ({ id, parentId: state.items[id]?.parentId || null, space: state.items[id]?.space }));
           const res = api.moveItems(ids, folderId, space);
           const target = folderId ? state.items[folderId]?.name : spaceLabel(state, space);
-          const skipped = [denied + (res.denied || 0) && `${denied + (res.denied || 0)} view-only`, res.locked && `${res.locked} locked`, res.held && `${res.held} on legal hold`].filter(Boolean).join(', ');
+          const skipped = [denied + (res.denied || 0) && `${denied + (res.denied || 0)} view-only`, res.locked && `${res.locked} locked`, res.held && `${res.held} on legal hold`, res.lostAccess && `${res.lostAccess} you'd lose access to (it isn't yours)`].filter(Boolean).join(', ');
           const undo = { label: 'Undo', onClick: () => {
             const groups = new Map();
             origin.forEach((o) => { const k = `${o.space}|${o.parentId || ''}`; if (!groups.has(k)) groups.set(k, { ...o, ids: [] }); groups.get(k).ids.push(o.id); });

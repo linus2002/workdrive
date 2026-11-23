@@ -265,7 +265,7 @@ export function MoveCopyDialog({ ids, mode = 'move', onClose }) {
     if (m === 'move') {
       const origin = ids.map((id) => ({ id, parentId: state.items[id]?.parentId || null, space: state.items[id]?.space }));
       const res = api.moveItems(ids, d.parentId, d.space);
-      const why = [res.locked && `${res.locked} locked`, res.denied && `${res.denied} view-only`, res.held && `${res.held} on legal hold`].filter(Boolean).join(', ');
+      const why = [res.locked && `${res.locked} locked`, res.denied && `${res.denied} view-only`, res.held && `${res.held} on legal hold`, res.lostAccess && `${res.lostAccess} you'd lose access to (it isn't yours)`].filter(Boolean).join(', ');
       const what = res.moved === ids.length ? label : `${res.moved} of ${ids.length} items`;
       toast(res.moved ? `Moved ${what} to "${destName}"${why ? ` · skipped ${why}` : ''}` : `Nothing was moved${why ? `: ${why}` : ''}`, {
         type: res.moved ? 'success' : 'warning',
