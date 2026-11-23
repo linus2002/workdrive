@@ -140,7 +140,7 @@ export default function AudioPlayer({ item }) {
 
         <audio ref={ref} src={url} preload="metadata" loop={loop}
           onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-          onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+          onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} onLoadedMetadata={(e) => { setDur(e.currentTarget.duration); e.currentTarget.playbackRate = speed; }}
           onDurationChange={(e) => setDur(e.currentTarget.duration)} onError={() => setError(true)} />
 
         {error ? <div className="banner warning">This browser can't play this audio format. Download the file to listen to it.</div> : (

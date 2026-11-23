@@ -25,6 +25,7 @@ export default function ShareDialog({ id, onClose }) {
   const [message, setMessage] = useState('');
   const [notify, setNotify] = useState(true);
   const [focus, setFocus] = useState(false);
+  const [askedSug, setAskedSug] = useState(false); // suggestions open on click or typing, not on the automatic focus
   const [pwd, setPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
@@ -208,7 +209,11 @@ export default function ShareDialog({ id, onClose }) {
     <Modal title={<span className="share-title"><span className="share-word">Share</span> <span className="share-item"><FileIcon item={item} size={20} /> <span className="truncate">{item.name}</span></span></span>}
       onClose={requestClose} width={560} icon={<Share2 size={20} />}
       footer={<>
-        <button className="btn btn-secondary" onClick={copy}><Link2 size={15} /> Copy link</button>
+        {/* With link sharing off, say what the button does: it turns the link on first. */}
+        <button className="btn btn-secondary" onClick={copy} disabled={!link.enabled && !manage}
+          data-tip={link.enabled ? 'Copy the link' : manage ? 'Turns on link sharing with the settings below, then copies the link' : 'Link sharing is off'}>
+          <Link2 size={15} /> {link.enabled || !manage ? 'Copy link' : 'Turn on & copy link'}
+        </button>
         <span className="grow" />
         {pending.length > 0 ? (
           <>
@@ -262,6 +267,8 @@ export default function ShareDialog({ id, onClose }) {
               placeholder={pending.length ? 'Add more…' : 'Add people or email addresses'}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setFocus(true)}
+              // The dialog focuses this field when it opens: only show suggestions once the person uses it.
+              onPointerDown={() => setAskedSug(true)}
               onBlur={() => setTimeout(() => setFocus(false), 150)}
               onKeyDown={(e) => {
                 if (['Enter', ',', ';', 'Tab'].includes(e.key) && query.trim()) {
@@ -278,7 +285,7 @@ export default function ShareDialog({ id, onClose }) {
             />
             <RoleSelect value={role} onChange={setRole} small />
           </div>
-          {focus && (suggestions.length > 0 || query.includes('@')) && (
+          {focus && (askedSug || query.trim()) && (suggestions.length > 0 || query.includes('@')) && (
             <div className="people-suggest pop-in">
               {suggestions.map(({ user: u, blocked }) => (
                 <button key={u.id} className={`suggest-row ${blocked ? 'is-blocked' : ''}`} aria-disabled={!!blocked} title={blocked || undefined}

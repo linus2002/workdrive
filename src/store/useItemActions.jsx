@@ -8,7 +8,7 @@ import {
 import { signWaitingForMe } from '../signatures/signing';
 import { useDrive, blobRegistry, registerBlob, blobsReady } from './DriveStore';
 import { useUI } from './UIContext';
-import { accessOf, canEdit, folderRoute, parentRoute, descendantIds, ancestors, isTrashedDeep, lockedByOther, lockedInside, canForceUnlock, openCommentCount, isPinned, shortcutTarget, uniqueName, canCommentAccess, blocksPermanentDelete, canManage, canDownload, quotaError, shareActive } from './selectors';
+import { accessOf, canEdit, folderRoute, parentRoute, liveDescendantIds, ancestors, isTrashedDeep, lockedByOther, lockedInside, canForceUnlock, openCommentCount, isPinned, shortcutTarget, uniqueName, canCommentAccess, blocksPermanentDelete, canManage, canDownload, quotaError, shareActive } from './selectors';
 import { getFileType, MIME, genThumb } from '../utils/fileTypes';
 import { makeZip, makePdf, makeDocx, makeXlsx, svgToRaster, svgToRasterNatural, dataUrlToBlob, saveBlob } from '../utils/exporters';
 import { sampleSheet, sampleText, sampleSlides, sampleArchive } from '../utils/sampleContent';
@@ -134,7 +134,7 @@ export function useItemActions() {
       for (const it of list) {
         if (it.type === 'file') await addFile(it, it.name);
         else {
-          const ids = descendantIds(s.items, it.id).filter((id) => !s.items[id].trashed);
+          const ids = liveDescendantIds(s.items, it.id); // not trashed subfolders' contents either
           for (const id of ids) {
             const d = s.items[id];
             if (d.type !== 'file') continue;

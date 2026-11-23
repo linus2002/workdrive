@@ -34,6 +34,9 @@ const inNumberRun = (text, index, length) => {
   return /^[ -]?\d/.test(after) && !/^[ -]?\d{1,2}\/\d{2}(?:\d{2})?(?!\d)/.test(after);
 };
 
+/** 2024-03-15, 15/03/2024, 03-15-24 … */
+const looksLikeDate = (s) => /^\s*(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\s*$/.test(s);
+
 /** Keep only the last 4 characters visible. */
 const mask = (s, keep = 4) => { const t = s.trim(); return t.length <= keep ? '••••' : `${t.slice(0, -keep).replace(/[A-Za-z0-9]/g, '•')}${t.slice(-keep)}`; };
 
@@ -44,11 +47,13 @@ export const DETECTORS = [
     // Luhn checksum + a real card network prefix + not embedded in a longer run of numbers (tables of figures).
     valid: (m, text, index) => { const d = digits(m); return d.length >= 13 && d.length <= 19 && !/^(\d)\1+$/.test(d) && cardNetwork(d) && luhn(d) && !inNumberRun(text, index, m.length); } },
   { id: 'iban', name: 'Bank IBANs', one: 'IBAN', many: 'IBANs', severity: 'high', re: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/gi, valid: ibanValid },
-  { id: 'bank', name: 'Bank account numbers', one: 'bank account number', many: 'bank account numbers', severity: 'medium', re: /\b(?:account|acct|a\/c)\s*(?:no\.?|number|#)?\s*[:#]?\s*(\d[\d -]{6,18}\d)\b/gi, valid: (m) => digits(m).length >= 8 },
-  { id: 'ph_tin', name: 'Philippine TINs', one: 'TIN', many: 'TINs', severity: 'high', re: /\b\d{3}-\d{3}-\d{3}(?:-\d{3,5})?\b/g },
+  { id: 'bank', name: 'Bank account numbers', one: 'bank account number', many: 'bank account numbers', severity: 'medium', re: /\b(?:account|acct|a\/c)\s*(?:no\.?|number|#)?\s*[:#]?\s*(\d[\d -]{6,18}\d)\b/gi, valid: (m) => digits(m).length >= 8 && !looksLikeDate(m) },
+  { id: 'ph_tin', name: 'Philippine TINs', one: 'TIN', many: 'TINs', severity: 'high', re: /\b\d{3}-\d{3}-\d{3}(?:-\d{3,5})?\b/g,
+    valid: (m, text, index) => /^\d{3}-\d{3}-\d{3}-\d{3,5}$/.test(m) ||/\b(?:TIN|tax\s*(?:id|identification)?(?:\s*(?:no\.?|number|#))?)\W{0,4}$/i.test(text.slice(Math.max(0, index - 40), index)) },
   { id: 'ph_sss', name: 'Philippine SSS numbers', one: 'SSS number', many: 'SSS numbers', severity: 'high', re: /\b\d{2}-\d{7}-\d\b/g },
   { id: 'us_ssn', name: 'US Social Security numbers', one: 'US SSN', many: 'US SSNs', severity: 'high', re: /\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g },
-  { id: 'secret', name: 'Passwords & API keys', one: 'password or API key', many: 'passwords or API keys', severity: 'high', re: /\b(?:AKIA[0-9A-Z]{16}|(?:sk|pk|rk)_(?:live|test)_[0-9A-Za-z]{16,}|gh[pousr]_[0-9A-Za-z]{30,})\b|\b(?:password|passwd|pwd)\s*[:=]\s*\S{4,}/gi },
+  { id: 'secret', name: 'Passwords & API keys', one: 'password or API key', many: 'passwords or API keys', severity: 'high', re: /\b(?:AKIA[0-9A-Z]{16}|(?:sk|pk|rk)_(?:live|test)_[0-9A-Za-z]{16,}|gh[pousr]_[0-9A-Za-z]{30,})\b|\b(?:password|passwd|pwd)\s*[:=]\s*\S{4,}/gi,
+    valid: (m) => { const v = m.split(/[:=]/).slice(1).join('').trim(); return !v || !/^[*•·.xX#_-]+$/.test(v); } },
   { id: 'emails', name: 'Email address lists', one: 'email address', many: 'email addresses', severity: 'low', min: 5, re: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
   { id: 'phones', name: 'Phone number lists', one: 'phone number', many: 'phone numbers', severity: 'low', min: 5, re: /(?:\+63[ -]?|\b0)9\d{2}[ -]?\d{3}[ -]?\d{4}\b|\+\d{1,3}[ -]?\(?\d{2,4}\)?[ -]?\d{3,4}[ -]?\d{3,4}\b/g },
 ];
@@ -74,13 +79,23 @@ export function scanText(text, enabled = null) {
 // Findings depend on the indexed text and the policy; cache per item so lists stay fast.
 const cache = new Map(); // id -> { key, findings }
 
+/**
+ * Detectors marked "not sensitive" for this file. A dismissal covers the version it was made on only:
+ * new content (an edit, an upload) is checked again.
+ */
+export const dismissedFor = (item) => ((item?.dlpIgnoreOf ?? 1) === (item?.version || 1) ? item?.dlpIgnore || [] : []);
+
+/** Who may mark a finding "not sensitive": admins always; owners and managers unless the policy blocks sharing. */
+export const canDismissFindings = (state, item, me, access) => me?.role === 'Admin'
+  || (state.org.policies.dlp?.action !== 'block' && (['owner', 'admin', 'organizer'].includes(access) || item.ownerId === state.meId));
+
 /** Sensitive-data findings for a file (from its indexed text), minus ones marked "not sensitive". */
 export function findingsFor(state, item) {
   const policy = state.org.policies.dlp;
   if (!policy?.enabled || item?.type !== 'file') return [];
   const entry = getEntry(item.id);
   if (!entry?.text) return [];
-  const ignore = item.dlpIgnore || [];
+  const ignore = dismissedFor(item);
   const key = `${entry.key}|${entry.at}|${JSON.stringify(policy.detectors || {})}|${ignore.join(',')}`;
   const hit = cache.get(item.id);
   if (hit?.key === key) return hit.findings;

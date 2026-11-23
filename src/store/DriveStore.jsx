@@ -1395,9 +1395,11 @@ export function DriveStoreProvider({ children }) {
         update((s) => {
           const it = s.items[id];
           if (!it) return s;
-          const cur = it.dlpIgnore || [];
+          // Dismissals belong to the current version (older ones no longer apply).
+          const version = it.version || 1;
+          const cur = (it.dlpIgnoreOf ?? 1) === version ? it.dlpIgnore || [] : [];
           const next = ignore ? [...new Set([...cur, detectorId])] : cur.filter((x) => x !== detectorId);
-          return log(patchItems(s, { [id]: { dlpIgnore: next } }), ignore ? 'Sensitive data dismissed' : 'Sensitive data restored', it.name, `${detectorName}${ignore ? ' marked as not sensitive' : ' flagged again'}`, { itemId: id });
+          return log(patchItems(s, { [id]: { dlpIgnore: next, dlpIgnoreOf: version } }), ignore ? 'Sensitive data dismissed' : 'Sensitive data restored', it.name, `${detectorName}${ignore ? ' marked as not sensitive' : ' flagged again'}`, { itemId: id });
         });
       },
 

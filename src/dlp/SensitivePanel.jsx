@@ -1,9 +1,9 @@
 import { ShieldAlert, Globe2, UserX, Undo2 } from 'lucide-react';
 import { useDrive, useMe } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
-import { accessOf, canManage, canEdit } from '../store/selectors';
+import { accessOf, canEdit } from '../store/selectors';
 import { useSearchIndex } from '../search/searchIndex';
-import { findingsFor, exposureOf, SEVERITY, topSeverity, detectorById } from './dlp';
+import { findingsFor, exposureOf, SEVERITY, topSeverity, detectorById, dismissedFor, canDismissFindings } from './dlp';
 
 /** Details-panel section: sensitive data found in this file and how exposed it currently is. */
 export default function SensitivePanel({ item }) {
@@ -13,10 +13,10 @@ export default function SensitivePanel({ item }) {
   useSearchIndex();
   if (item.type !== 'file' || item.trashed || !state.org.policies.dlp?.enabled) return null;
   const findings = findingsFor(state, item);
-  const ignored = item.dlpIgnore || [];
+  const ignored = dismissedFor(item);
   if (!findings.length && !ignored.length) return null;
   const access = accessOf(state, item);
-  const canReview = me?.role === 'Admin' || canManage(access) || item.ownerId === state.meId; // who may mark false positives
+  const canReview = canDismissFindings(state, item, me, access); // who may mark false positives
   const canShare = canEdit(access);
   const exp = exposureOf(state, item);
   const sev = topSeverity(findings);

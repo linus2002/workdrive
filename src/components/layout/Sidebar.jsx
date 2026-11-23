@@ -236,14 +236,14 @@ export default function Sidebar() {
           <NavItem to="/folders" icon={FolderClosed} label={t('My Folders')} collapsed={collapsed} expandable expanded={openMy} onToggle={() => setOpenMy(!openMy)} end onNavigate={onNavigate} dropProps={rootDrop.props} dropOver={rootDrop.over}
             forceActive={inMySub && (collapsed || !openMy)} />
           {openMy && !collapsed && rootFolders.length > 0 && (
-            <ul className="tree">
+            <ul className="tree tree-capped">
               {rootFolders.map((f) => <TreeNode key={f.id} folder={f} depth={1} activeChain={activeChain} onNavigate={onNavigate} />)}
             </ul>
           )}
           <NavItem to="/team-folders" icon={Users} label={t('Team Folders')} collapsed={collapsed} expandable expanded={openTeams} onToggle={() => setOpenTeams(!openTeams)} end onNavigate={onNavigate}
             forceActive={inTeamSection && (collapsed || !openTeams)} />
           {openTeams && !collapsed && (
-            <ul className="tree">
+            <ul className="tree tree-capped">
               {myTeams.map((tm) => <TeamNode key={tm.id} team={tm} activeChain={activeChain} onNavigate={onNavigate} />)}
             </ul>
           )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanText, exposureOf } from '../../src/dlp/dlp.js';
+import { scanText, exposureOf, dismissedFor, canDismissFindings } from '../../src/dlp/dlp.js';
 import { planRestore } from '../../src/restore/restore.js';
 
 const ids = (findings) => findings.map((f) => f.id);
@@ -58,5 +58,36 @@ describe('restore to a date never makes a folder loop', () => {
     expect(plan.skipped.map((s) => s.itemId)).toContain('A');
     const b = plan.ops.find((o) => o.itemId === 'B');
     expect(b.patch.parentId).toBe('root');
+  });
+});
+
+describe('fewer false alarms', () => {
+  it('needs the branch code or a TIN label for a Philippine TIN', () => {
+    expect(ids(scanText('Ref 123-456-789'))).not.toContain('ph_tin');
+    expect(ids(scanText('TIN: 123-456-789'))).toContain('ph_tin');
+    expect(ids(scanText('123-456-789-000'))).toContain('ph_tin');
+  });
+  it('does not read a date after "Account number" as a bank account', () => {
+    expect(ids(scanText('Account number: 2024-03-15'))).not.toContain('bank');
+    expect(ids(scanText('Account number: 1234 5678 9012'))).toContain('bank');
+  });
+  it('does not flag a masked password', () => {
+    expect(ids(scanText('Password: ********'))).not.toContain('secret');
+    expect(ids(scanText('Password: hunter22'))).toContain('secret');
+  });
+});
+
+describe('"not sensitive" dismissals', () => {
+  it('apply only to the version they were made on', () => {
+    expect(dismissedFor({ version: 2, dlpIgnore: ['card'], dlpIgnoreOf: 2 })).toEqual(['card']);
+    expect(dismissedFor({ version: 3, dlpIgnore: ['card'], dlpIgnoreOf: 2 })).toEqual([]);
+    expect(dismissedFor({ dlpIgnore: ['card'] })).toEqual(['card']); // older saves: version 1
+  });
+  it('can only be made by admins while the policy blocks sharing', () => {
+    const st = (action) => ({ meId: 'me', org: { policies: { dlp: { action } } } });
+    const item = { ownerId: 'me' };
+    expect(canDismissFindings(st('block'), item, { role: 'Member' }, 'owner')).toBe(false);
+    expect(canDismissFindings(st('block'), item, { role: 'Admin' }, 'owner')).toBe(true);
+    expect(canDismissFindings(st('warn'), item, { role: 'Member' }, 'owner')).toBe(true);
   });
 });

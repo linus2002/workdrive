@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { useUploads } from '../../store/UploadContext';
@@ -33,6 +33,15 @@ export function useDropTarget(folderId, space, enabled = true) {
   const uploads = useUploads();
   const [over, setOver] = useState(false);
   const depth = useRef(0);
+  // A drop on a nested target (a folder row) stops propagation, so this target never sees dragleave/drop:
+  // reset whenever any drag ends anywhere, or the highlight would stay on.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const reset = () => { depth.current = 0; setOver(false); };
+    window.addEventListener('drop', reset, true);
+    window.addEventListener('dragend', reset, true);
+    return () => { window.removeEventListener('drop', reset, true); window.removeEventListener('dragend', reset, true); };
+  }, [enabled]);
   if (!enabled) return { over: false, props: {} };
   const accepts = (e) => e.dataTransfer.types.includes(DRAG_TYPE) || e.dataTransfer.types.includes('Files');
   return {

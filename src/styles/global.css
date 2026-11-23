@@ -1826,3 +1826,41 @@ button.item-chip:hover { border-color: var(--primary); color: var(--primary); }
   .setting-control { max-width: 100%; min-width: 0; }
   .setting-control .select, .setting-control .input { max-width: 100%; }
 }
+
+/* ---------- audit fixes: medium UI/UX ---------- */
+/* Contrast (WCAG AA) in light mode: a slightly deeper brand blue for text and buttons, darker badge text. */
+:root:not([data-theme='dark']) {
+  --primary: #1170b8;
+  --primary-hover: #0f66a8;
+  --primary-press: #0d5a94;
+  --primary-strong: #0f66a8;
+  --primary-strong-hover: #0d5a94;
+  --primary-strong-press: #0b4f83;
+}
+:root:not([data-theme='dark']) .pill-green { color: #166534; }
+:root:not([data-theme='dark']) .pill-red, :root:not([data-theme='dark']) .due-chip.overdue { color: #b91c1c; }
+:root:not([data-theme='dark']) .pill-gray, :root:not([data-theme='dark']) .due-chip { color: #5f6672; }
+.paper-num { color: #6b7280; } /* paper pages are always white */
+
+/* Spreadsheet preview: the stage around the grid follows the dark preview, like other file types. */
+.preview-overlay .sheet-scroll { background: #1b1d21; }
+
+/* Long team-folder / My Folders trees scroll on their own so Recent, Tasks, Trash … stay in reach. */
+.sidebar-nav .tree-capped { max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Tab strips that scroll sideways (phones): a soft shadow shows there's more in that direction.
+   Page-level strips only (dialogs have their own background colour). */
+@media (max-width: 720px) {
+main .tabs, main .settings-nav {
+  background:
+    linear-gradient(to right, var(--bg) 30%, transparent) left / 20px 100% no-repeat local,
+    linear-gradient(to left, var(--bg) 30%, transparent) right / 20px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.16), transparent) left / 8px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.16), transparent) right / 8px 100% no-repeat scroll;
+}
+}
+
+@media (max-width: 720px) {
+  /* Previous / next in a phone preview: bottom corners, so they don't sit on the document text. */
+  .stage-arrow { top: auto; bottom: 14px; transform: none; width: 40px; height: 40px; opacity: 0.85; }
+}

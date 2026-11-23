@@ -32,13 +32,15 @@ export function BulkRenameDialog({ ids, onClose }) {
   const rows = useMemo(() => {
     const out = items.map((it, i) => {
       const hasExt = it.type === 'file' && keepExt;
-      const [stem, ext] = hasExt ? splitName(it.name) : [it.name, ''];
+      // Split off the extension exactly as written (case, a trailing dot), so unchanged names stay unchanged.
+      const dot = it.name.lastIndexOf('.');
+      const [stem, tail] = hasExt && dot > 0 ? [it.name.slice(0, dot), it.name.slice(dot)] : [it.name, ''];
       let next = stem;
-      if (mode === 'replace' && find) next = stem.replace(new RegExp(escapeRe(find), matchCase ? 'g' : 'gi'), repl);
+      if (mode === 'replace' && find) next = stem.replace(new RegExp(escapeRe(find), matchCase ? 'g' : 'gi'), () => repl); // literal: no $& / $1 patterns
       if (mode === 'add' && addText) next = where === 'prefix' ? addText + stem : stem + addText;
       if (mode === 'number') next = `${base}${sep}${String(Number(start) + i).padStart(Number(pad), '0')}`;
       if (mode === 'case') next = caseMode === 'lower' ? stem.toLowerCase() : caseMode === 'upper' ? stem.toUpperCase() : caseMode === 'sentence' ? stem.charAt(0).toUpperCase() + stem.slice(1).toLowerCase() : titleCase(stem);
-      const name = (ext ? `${next}.${ext}` : next).trim();
+      const name = `${next}${tail}`.trim();
       const blocked = lockedByOther(state, it) ? 'Locked by another user' : !canEdit(accessOf(state, it)) ? 'View only' : null;
       return { it, name, error: blocked || validateName(name), changed: name !== it.name };
     });

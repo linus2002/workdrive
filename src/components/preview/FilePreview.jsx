@@ -12,7 +12,7 @@ import { sampleSheet, sampleSlides, sampleText } from '../../utils/sampleContent
 import { parseCsv } from '../../utils/csv';
 import { FileIcon } from '../common';
 import { DetailsContent } from '../files/FileDetailsPanel';
-import { PdfViewer, TextViewer, DocViewer, SheetViewer, SlidesViewer, VideoViewer, AudioViewer, ArchiveViewer, NoPreview, realUrl, newTabUrl, pdfNeedsCanvas, isUploadedCsv } from './Viewers';
+import { PdfViewer, TextViewer, DocViewer, SheetViewer, SlidesViewer, VideoViewer, AudioViewer, ArchiveViewer, NoPreview, realUrl, newTabUrl, pdfNeedsCanvas, isUploadedCsv, TEXT_PREVIEW_MAX } from './Viewers';
 import { MarkedImage, MarkedPdf, MarkupToolbar, useMarkup, supportsMarkup, downloadWithMarkup, useNameOf, usePageCount, TOOLS } from '../../viewing/Markup';
 import { Filmstrip, Slideshow } from '../../viewing/Gallery';
 import { signWaitingForMe } from '../../signatures/signing';
@@ -363,7 +363,13 @@ export default function FilePreview() {
       setSheet(parseCsv(await blob.text()));
     } else if (cat === 'spreadsheet') setSheet(sampleSheet(item).map((r) => [...r]));
     else if (cat === 'presentation') setSlides(sampleSlides(item).map((s) => ({ ...s })));
-    else setDraft(item.content ?? (cat === 'document' ? sampleText(item) : ''));
+    else if (cat === 'text' && item.content == null && (realUrl(item) || item.mime)) {
+      // Text kept only as bytes (large uploads): edit the real text, never an empty draft that would overwrite it.
+      const blob = await fileBlob(item).catch(() => null);
+      if (!blob) { ui.toast("This file's contents aren't available in this browser", { type: 'error' }); return; }
+      if (blob.size > TEXT_PREVIEW_MAX) { ui.toast('This file is too large to edit here. Download it to edit it.', { type: 'warning' }); return; }
+      setDraft(await blob.text());
+    } else setDraft(item.content ?? (cat === 'document' ? sampleText(item) : ''));
     setEditing(true);
     setDirty(false);
   };
@@ -468,7 +474,7 @@ export default function FilePreview() {
         {siblings.length > 1 && (
           <div className="preview-nav hide-sm">
             <button className="icon-btn on-dark" disabled={idx <= 0} onClick={() => go(-1)} aria-label="Previous file" data-tip="Previous (←)"><ChevronLeft size={18} /></button>
-            <span>{idx + 1} / {siblings.length}</span>
+            <span title="Position of this file in the folder">File {idx + 1} of {siblings.length}</span>
             <button className="icon-btn on-dark" disabled={idx >= siblings.length - 1} onClick={() => go(1)} aria-label="Next file" data-tip="Next (→)"><ChevronRight size={18} /></button>
           </div>
         )}

@@ -64,8 +64,23 @@ export function descendantIds(items, id) {
   return out;
 }
 
+/** Descendants that aren't in Trash, skipping everything inside a trashed subfolder too. */
+export function liveDescendantIds(items, id) {
+  const idx = childIndex(items);
+  const out = [];
+  const stack = [id];
+  while (stack.length) {
+    for (const k of idx.get(stack.pop()) || []) {
+      if (items[k].trashed) continue;
+      out.push(k);
+      stack.push(k);
+    }
+  }
+  return out;
+}
+
 export function folderSize(items, id) {
-  return descendantIds(items, id).reduce((s, cid) => s + (items[cid].type === 'file' && !items[cid].trashed ? items[cid].size : 0), 0);
+  return liveDescendantIds(items, id).reduce((s, cid) => s + (items[cid].type === 'file' ? items[cid].size : 0), 0);
 }
 
 export function itemCount(items, id) {

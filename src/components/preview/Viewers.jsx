@@ -106,7 +106,10 @@ export function PdfViewer({ item, zoom, onDownload, contained = false }) {
 }
 
 export function TextViewer({ item, editing, draft, setDraft, mono = true }) {
-  const text = item.content ?? '';
+  // Uploads keep their text inline only under 1 MB; bigger ones are read from the stored bytes.
+  const fromBytes = item.content == null && (!!realUrl(item) || !!item.mime);
+  const loaded = useFileText(item, fromBytes && !editing);
+  const text = item.content ?? loaded?.text ?? '';
   const lang = langOf(item.ext);
   const [mode, setMode] = useState('rendered'); // Markdown only: rendered | source
   useEffect(() => { setMode('rendered'); }, [item.id]); // each file opens in Preview mode
@@ -125,8 +128,18 @@ export function TextViewer({ item, editing, draft, setDraft, mono = true }) {
       </div>
     );
   }
+  if (fromBytes && loaded === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (fromBytes && loaded === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
   if (!text) {
     return <div className="viewer-scroll"><pre className="text-view"><span className="muted">This file is empty.</span></pre></div>;
+  }
+  if (loaded?.truncated) {
+    return (
+      <div className="viewer-scroll">
+        <div className="sign-message" role="status">Showing the first {formatSize(TEXT_PREVIEW_MAX)} of {formatSize(item.size)}. Download the file to see all of it.</div>
+        <CodeViewer code={text} lang={lang === 'markdown' ? null : lang} embedded />
+      </div>
+    );
   }
   if (lang === 'markdown') {
     return (
@@ -176,18 +189,32 @@ export function DocViewer({ item, editing, draft, setDraft, zoom }) {
 const col = (i) => String.fromCharCode(65 + (i % 26));
 
 /** Rows of an uploaded CSV read from its bytes: undefined while loading, null if unavailable. */
-function useCsvRows(item, active) {
+/** Most text shown in a preview; bigger files show the start with a note (reading all of it can freeze the tab). */
+export const TEXT_PREVIEW_MAX = 2 * 1024 * 1024;
+
+/**
+ * Text of a file read from its stored bytes: undefined while loading, null if unavailable,
+ * else { text, truncated }. Only the first TEXT_PREVIEW_MAX bytes are read.
+ */
+function useFileText(item, active) {
   const { blobsVersion } = useDrive();
-  const [state, setState] = useState({ key: null, rows: undefined });
+  const [state, setState] = useState({ key: null, value: undefined });
   const key = active ? `${item.id}@${item.version || 1}#${blobsVersion}` : null;
   useEffect(() => {
     if (!key) return undefined;
     let alive = true;
-    fileBlob(item).then((b) => (b ? b.text() : null)).then((t) => { if (alive) setState({ key, rows: t == null ? null : parseCsv(t) }); })
-      .catch(() => { if (alive) setState({ key, rows: null }); });
+    fileBlob(item)
+      .then((b) => (b ? b.slice(0, TEXT_PREVIEW_MAX).text().then((text) => ({ text, truncated: b.size > TEXT_PREVIEW_MAX })) : null))
+      .then((value) => { if (alive) setState({ key, value }); })
+      .catch(() => { if (alive) setState({ key, value: null }); });
     return () => { alive = false; };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- key identifies the item version
-  return state.key === key ? state.rows : undefined;
+  return state.key === key ? state.value : undefined;
+}
+
+function useCsvRows(item, active) {
+  const value = useFileText(item, active);
+  return useMemo(() => (value == null ? value : parseCsv(value.text)), [value]);
 }
 
 /** True for a CSV the user uploaded (its rows come from the file, not item.sheet or sample data). */
