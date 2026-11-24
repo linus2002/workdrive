@@ -802,6 +802,7 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .admin-console .pill-green { background: #15803d; }
 .admin-console .pill-amber { background: #b45309; }
 .admin-console .pill-gray { background: #6b7280; }
+.admin-console .pill-red { background: #b91c1c; }
 .table tr.clickable { cursor: pointer; }
 .cell-name-inline { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 340px; }
 .member-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -1840,6 +1841,8 @@ button.item-chip:hover { border-color: var(--primary); color: var(--primary); }
 :root:not([data-theme='dark']) .pill-green { color: #166534; }
 :root:not([data-theme='dark']) .pill-red, :root:not([data-theme='dark']) .due-chip.overdue { color: #b91c1c; }
 :root:not([data-theme='dark']) .pill-gray, :root:not([data-theme='dark']) .due-chip { color: #5f6672; }
+/* Admin console pills use solid backgrounds, so their text stays white over the light-mode tints above. */
+:root .admin-console .pill.pill-green, :root .admin-console .pill.pill-red, :root .admin-console .pill.pill-gray, :root .admin-console .pill.pill-amber, :root .admin-console .pill.pill-blue { color: #fff; }
 .paper-num { color: #6b7280; } /* paper pages are always white */
 
 /* Spreadsheet preview: the stage around the grid follows the dark preview, like other file types. */
