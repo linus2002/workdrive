@@ -2,7 +2,7 @@ import { useId, useEffect, useLayoutEffect, useRef, useState, useCallback } from
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, AlertCircle, Info, AlertTriangle, Users, CornerUpRight } from 'lucide-react';
 import { getFileType, genThumb } from '../../utils/fileTypes';
-import { initials, escapeRegExp } from '../../utils/format';
+import { initials, escapeRegExp, toDateInput, fromDateInput } from '../../utils/format';
 import { blobRegistry, useDrive } from '../../store/DriveStore';
 import { shortcutTarget } from '../../store/selectors';
 import { useUI, useDialogLayer } from '../../store/UIContext';
@@ -385,6 +385,26 @@ export function EmptyState({ icon: Icon, title, text, action, compact }) {
       {text && <p>{text}</p>}
       {action}
     </div>
+  );
+}
+
+/**
+ * A date field that saves as you go (no Save button), but only a complete date from today on. Browsers report
+ * every digit while a year is typed (0002, 0020, 0202, 2027): those partial, past dates are never saved.
+ * value: timestamp | null; onCommit(timestamp) runs for each valid date picked.
+ */
+export function CommitDateInput({ value, onCommit, className = 'input input-date', ...rest }) {
+  const [text, setText] = useState(toDateInput(value));
+  const [error, setError] = useState('');
+  useEffect(() => { setText(toDateInput(value)); }, [value]);
+  const valid = (str) => { const ts = fromDateInput(str); return ts && ts >= Date.now() ? ts : null; };
+  return (
+    <span className="date-commit">
+      <input type="date" className={className} value={text} min={toDateInput(Date.now())} aria-invalid={!!error || undefined}
+        onChange={(e) => { setText(e.target.value); setError(''); const ts = valid(e.target.value); if (ts && ts !== value) onCommit(ts); }}
+        onBlur={() => { if (text && !valid(text)) { setError('Choose today or a later date'); setText(toDateInput(value)); } }} {...rest} />
+      {error && <span className="field-error" role="alert">{error}</span>}
+    </span>
   );
 }
 

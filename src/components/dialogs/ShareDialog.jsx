@@ -4,11 +4,11 @@ import { isGuest, defaultGuestExpiry, accessState, sharingPolicyBlock } from '..
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { effectiveShares, accessOf, canEdit, canManage } from '../../store/selectors';
-import { toDateInput, fromDateInput, formatDate, formatDateTime } from '../../utils/format';
+import { formatDate, formatDateTime } from '../../utils/format';
 import { LINK_EVENTS, linkStatus } from '../../utils/sharing';
 import { hashSecret, hasSecret } from '../../data/storage/secrets';
 import { checkShare, summarize, isExternalUser } from '../../dlp/dlp';
-import { Modal, Avatar, RoleSelect, Switch, FileIcon } from '../common';
+import { Modal, Avatar, RoleSelect, Switch, FileIcon, CommitDateInput } from '../common';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VIA = { qr: 'via QR code', embed: 'via embed' };
@@ -173,13 +173,19 @@ export default function ShareDialog({ id, onClose }) {
   };
   const copy = () => (!link.enabled && !manage ? toast('Link sharing is off. Only owners and editors can turn it on.', { type: 'info' }) : enableLink((turnedOn) => writeLink(turnedOn ? 'Link sharing turned on and copied' : 'Link copied to clipboard')));
 
-  // Closing with people still in the "to share" list asks first, so invites aren't dropped silently.
+  // Closing with unsent work asks first, so nothing is dropped silently: people added but not shared with yet,
+  // a name or email typed but not added, or a link password typed but not saved.
   const requestClose = () => {
-    if (!pending.length) { onClose(); return; }
+    const unsaved = [
+      pending.length && `${pending.length} ${pending.length === 1 ? 'person you added hasn’t' : 'people you added haven’t'} been shared with yet`,
+      query.trim() && `“${query.trim()}” is typed in the people field but wasn’t added`,
+      pwd && 'the link password you typed isn’t saved',
+    ].filter(Boolean);
+    if (!unsaved.length) { onClose(); return; }
     ui.openDialog('confirm', {
-      title: `Discard ${pending.length} pending invite${pending.length === 1 ? '' : 's'}?`,
-      message: 'The people you added haven’t been sent anything yet.',
-      confirmLabel: 'Discard', cancelLabel: 'Keep editing', danger: true,
+      title: 'Close without finishing?',
+      message: `${unsaved.join('; ').replace(/^./, (c) => c.toUpperCase())}.`,
+      confirmLabel: 'Close anyway', cancelLabel: 'Keep editing', danger: true,
       onConfirm: onClose,
     });
   };
@@ -220,7 +226,7 @@ export default function ShareDialog({ id, onClose }) {
             <button className="btn btn-secondary" onClick={() => setPending([])}>Cancel</button>
             <button className="btn btn-primary" onClick={send}><Mail size={15} /> Share</button>
           </>
-        ) : <button className="btn btn-primary" onClick={onClose}>Done</button>}
+        ) : <button className="btn btn-primary" onClick={requestClose}>Done</button>}
       </>}>
       {!manage && <div className="banner warning">You have {access} access. Only owners and editors can change sharing.</div>}
       {dlpPrompt && (
@@ -346,8 +352,8 @@ export default function ShareDialog({ id, onClose }) {
                     {ex === 'expired' ? <span>Access ended {formatDate(s.expires)}</span> : s.expires ? <span>Access ends {formatDate(s.expires)}</span> : <span>Access never ends</span>}
                     {manage && direct && (
                       <>
-                        <input type="date" className="input input-date" value={toDateInput(s.expires)} min={toDateInput(Date.now())} aria-label={`Access ends for ${u.name}`}
-                          onChange={(e) => { const exp = fromDateInput(e.target.value); if (!exp) return; api.setShareExpiry(item.id, s.userId, exp); toast(`Access ends ${formatDate(exp)}`, { type: 'success' }); }} />
+                        <CommitDateInput value={s.expires} aria-label={`Access ends for ${u.name}`}
+                          onCommit={(exp) => { api.setShareExpiry(item.id, s.userId, exp); toast(`Access ends ${formatDate(exp)}`, { type: 'success' }); }} />
                         {s.expires && <button className="btn btn-secondary btn-sm" onClick={() => { api.setShareExpiry(item.id, s.userId, null); toast('Access end date removed', { type: 'success' }); }}>Remove end date</button>}
                       </>
                     )}
@@ -400,8 +406,7 @@ export default function ShareDialog({ id, onClose }) {
               <label className="link-opt">
                 <CalendarClock size={16} className="muted" />
                 <span className="grow">Link expires<span className="muted small block">{link.expires ? `At the end of ${formatDate(link.expires)}` : 'Never'}</span></span>
-                <input type="date" className="input input-date" value={toDateInput(link.expires)} min={toDateInput(Date.now())} disabled={!manage} aria-label="Link expires"
-                  onChange={(e) => { const exp = fromDateInput(e.target.value); if (exp) setLink({ expires: exp }); }} />
+                <CommitDateInput value={link.expires} disabled={!manage} aria-label="Link expires" onCommit={(exp) => setLink({ expires: exp })} />
                 {link.expires && manage && <button type="button" className="icon-btn sm" onClick={(e) => { e.preventDefault(); setLink({ expires: null }); }} aria-label="Remove link expiry date" data-tip="Never expires"><X size={15} /></button>}
               </label>
               <div className="link-opt">

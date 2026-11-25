@@ -76,3 +76,11 @@ export const fromDateInput = (str, { endOfDay = true } = {}) => {
   if (!y || !m || !d) return null;
   return endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 0).getTime() : new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
 };
+
+/** For a date field that can't be in the past: an error message for 'YYYY-MM-DD', or null when it's fine/empty. */
+export const pastDateError = (str) => {
+  if (!str) return null;
+  const ts = fromDateInput(str);
+  if (!ts) return 'Enter a valid date';
+  return ts < Date.now() ? 'Choose today or a later date' : null;
+};

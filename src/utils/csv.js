@@ -9,3 +9,15 @@ export const parseCsv = (text) => text.replace(/\r/g, '').split('\n').filter((l,
   out.push(cur);
   return out;
 });
+
+/**
+ * One CSV cell for files people open in Excel/Sheets. Text starting with = + - @ (or tab / CR) would run as a
+ * formula there (a file name like =HYPERLINK(...) uploaded by an outsider), so it gets a leading apostrophe.
+ */
+export const csvCell = (v) => {
+  let t = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+  return `"${t.replace(/"/g, '""')}"`;
+};
+/** Rows of values → CSV text (Windows line endings, which Excel expects). */
+export const toCsv = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n');

@@ -4,7 +4,7 @@ import { PenTool, Plus, Trash2, ArrowUp, ArrowDown, UserPlus, Wand2, MousePointe
 import { useDrive } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
 import { fileBlob } from '../store/useItemActions';
-import { uid, toDateInput, fromDateInput } from '../utils/format';
+import { uid, toDateInput, fromDateInput, pastDateError } from '../utils/format';
 import { Modal } from '../components/common';
 import { PdfPages, usePdfDocument } from '../viewing/PdfPages';
 import { FIELD_KINDS, SIGNER_COLORS, isEmail } from './signing';
@@ -148,6 +148,7 @@ export default function SignRequestDialog({ itemId, onClose }) {
     setTried(true);
     if (step === 0 && !recipientsOk) return;
     if (step === 1 && (!fieldsOk || pdf.error)) return;
+    if (step === 2 && pastDateError(due)) return;
     setTried(false);
     if (step < 2) setStep(step + 1); else send();
   };
@@ -277,7 +278,8 @@ export default function SignRequestDialog({ itemId, onClose }) {
           <label className="field"><span className="field-label">Message <span className="muted">(optional)</span></span>
             <textarea className="input textarea" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Add a note for the signers" /></label>
           <label className="field"><span className="field-label">Sign by <span className="muted">(optional — the request expires after this date)</span></span>
-            <input className="input" type="date" value={due} min={toDateInput(Date.now())} onChange={(e) => setDue(e.target.value)} style={{ maxWidth: 200 }} /></label>
+            <input className="input" type="date" value={due} min={toDateInput(Date.now())} onChange={(e) => setDue(e.target.value)} style={{ maxWidth: 200 }} aria-invalid={!!pastDateError(due) || undefined} />
+            {pastDateError(due) && <span className="field-error">{pastDateError(due)}</span>}</label>
           <div className="details-section">
             <div className="details-section-head"><span>{signers.length} signer{signers.length === 1 ? '' : 's'}{sequential ? ', in this order' : ''}</span></div>
             <ol className="signer-list">

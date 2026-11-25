@@ -7,7 +7,7 @@ import {
 import { useDrive } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
 import { folderRoute, parentRoute } from '../store/selectors';
-import { formatDate, formatDateTime, toDateInput, fromDateInput } from '../utils/format';
+import { formatDate, formatDateTime, toDateInput, fromDateInput, pastDateError } from '../utils/format';
 import { Avatar, Modal, EmptyState, FileIcon, FolderGlyph } from '../components/common';
 import { Section, SettingRow } from '../views/SettingsView';
 import { guestRows, guestsCsv, ACCESS_STATE, DAY } from './guests';
@@ -58,9 +58,10 @@ function BulkExpiryDialog({ row, keys, onClose }) {
   };
   return (
     <Modal title="Change when access ends" subtitle={`${row.user.name} · ${single ? single.name : plural(n, 'resource')}`} onClose={onClose} width={440} icon={<Hourglass size={18} />}
-      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!fromDateInput(date)} onClick={() => apply(fromDateInput(date))}>Set date</button></>}>
+      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!fromDateInput(date) || !!pastDateError(date)} onClick={() => apply(fromDateInput(date))}>Set date</button></>}>
       <label className="field"><span className="field-label">Access ends</span>
-        <input className="input" type="date" value={date} min={toDateInput(Date.now())} onChange={(e) => setDate(e.target.value)} data-autofocus />
+        <input className="input" type="date" value={date} min={toDateInput(Date.now())} onChange={(e) => setDate(e.target.value)} data-autofocus aria-invalid={!!pastDateError(date) || undefined} />
+        {pastDateError(date) && <span className="field-error">{pastDateError(date)}</span>}
       </label>
       <div className="chip-row">
         {[7, 30, 90].map((d) => <button key={d} type="button" className="btn btn-secondary btn-sm" onClick={() => setDate(toDateInput(Date.now() + d * DAY))}>{d} days from today</button>)}

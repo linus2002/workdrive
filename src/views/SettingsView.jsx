@@ -14,6 +14,7 @@ import LanguagePicker from '../i18n/LanguagePicker';
 import { checkPassword, passwordPatch, twoFactorOn } from '../store/account';
 import { newTotpSecret, verifyTotp, totpUri, groupSecret } from '../utils/totp';
 import { qrSvg } from '../sharing/qr';
+import { useUnsavedGuard } from '../utils/useUnsavedGuard';
 
 const BackupPanel = lazyNamed(() => import('../backup/BackupPanel'));
 
@@ -63,6 +64,7 @@ function Profile() {
   const { toast } = useUI();
   const [form, setForm] = useState({ name: me.name, title: me.title || '', dept: me.dept || '', phone: me.phone || '', email: me.email });
   const dirty = ['name', 'title', 'dept', 'phone'].some((k) => form[k] !== (me[k] || ''));
+  useUnsavedGuard(dirty, 'You have unsaved profile changes. Leave without saving?');
   const save = (e) => { e.preventDefault(); if (!form.name.trim()) return; api.updateUser(me.id, { name: form.name.trim(), title: form.title, dept: form.dept, phone: form.phone }); toast('Profile updated', { type: 'success' }); };
   const colors = ['#1686D9', '#D946EF', '#0EA5A4', '#16A34A', '#EA7A1A', '#6366F1', '#E5484D'];
   return (

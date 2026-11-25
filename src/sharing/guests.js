@@ -2,6 +2,7 @@
 import { isExternalUser } from '../dlp/dlp';
 import { isTrashedDeep, locationOf, shareActive } from '../store/selectors';
 import { toDateInput } from '../utils/format';
+import { csvCell } from '../utils/csv';
 
 export const DAY = 86400000;
 export const EXPIRING_DAYS = 7;
@@ -99,8 +100,7 @@ export const defaultGuestExpiry = (state, now = Date.now()) => {
 
 /** Spreadsheet of every guest's access, for audits. */
 export function guestsCsv(state, rows) {
-  // Cells starting with = + - @ (or tab / CR) would run as formulas in spreadsheet apps: prefix an apostrophe.
-  const q = (v) => { let t = String(v ?? ''); if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`; return `"${t.replace(/"/g, '""')}"`; };
+  const q = csvCell; // formula-safe (see utils/csv)
   const lines = [['Guest', 'Email', 'Domain', 'Account', 'Resource', 'Type', 'Location', 'Access', 'Shared by', 'Shared on', 'Expires', 'Status']];
   for (const r of rows) {
     if (!r.resources.length) lines.push([r.user.name, r.user.email, r.domain, r.user.status, '', '', '', '', '', '', '', 'No access']);

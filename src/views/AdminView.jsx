@@ -9,6 +9,7 @@ import StorageAnalytics from './StorageAnalytics';
 import DataProtectionTab from '../dlp/DataProtectionTab';
 import { useDrive, useMe } from '../store/DriveStore';
 import { twoFactorOn } from '../store/account';
+import { toCsv } from '../utils/csv';
 import { useUI } from '../store/UIContext';
 import { teamUsage, itemList } from '../store/selectors';
 import { formatSize, formatDate, formatDateTime } from '../utils/format';
@@ -413,7 +414,7 @@ function AuditTab() {
     && (!q || `${a.target} ${a.details}`.toLowerCase().includes(q.toLowerCase())));
   const exportCsv = () => {
     const rows = [['Time', 'User', 'Action', 'Target', 'Details', 'IP'], ...list.map((a) => [new Date(a.at).toISOString(), state.users.find((u) => u.id === a.actorId)?.name || '', a.action, a.target, a.details || '', a.ip])];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows); // escapes formula-like cells, e.g. a file name starting with "="
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const el = document.createElement('a'); el.href = url; el.download = 'audit-log.csv'; el.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
