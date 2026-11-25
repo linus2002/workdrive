@@ -3,7 +3,7 @@
 // units, so it scales with the card.
 import { useEffect, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
-import { useDrive, blobRegistry } from '../../store/DriveStore';
+import { blobRegistry } from '../../store/DriveStore';
 import { getFileType } from '../../utils/fileTypes';
 import { sampleSheet, sampleSlides, sampleText } from '../../utils/sampleContent';
 import { parseCsv } from '../../utils/csv';
@@ -70,28 +70,34 @@ async function readContent(item) {
 }
 
 // Read uploaded files one at a time and remember the result per file version.
+// Cards that scrolled away before their turn are skipped (fast scrolling through thousands of files would
+// otherwise queue a read for every card it passed, and the ones you stop on would wait behind them).
 const cache = new Map();
+const wanted = new Map(); // key -> how many mounted cards are waiting for it
+const SKIPPED = Symbol('skipped');
 let queue = Promise.resolve();
 function loadContent(key, item) {
   if (!cache.has(key)) {
-    const job = queue.then(() => readContent(item)).catch(() => null);
+    const job = queue.then(() => (wanted.get(key) ? readContent(item) : SKIPPED)).catch(() => null);
     queue = job;
     cache.set(key, job);
+    job.then((v) => { if (v === SKIPPED) cache.delete(key); });
     if (cache.size > 300) cache.delete(cache.keys().next().value);
   }
   return cache.get(key);
 }
 
 function useCardContent(item) {
-  const { blobsVersion } = useDrive();
   const sync = syncContent(item);
-  const key = sync === undefined ? `${item.id}@${item.version || 1}#${blobsVersion}` : null;
+  // Read once per file version (bytes loading for other files don't make this one stale).
+  const key = sync === undefined ? `${item.id}@${item.version || 1}` : null;
   const [loaded, setLoaded] = useState({ key: null, value: null });
   useEffect(() => {
     if (!key) return undefined;
     let alive = true;
-    loadContent(key, item).then((value) => { if (alive) setLoaded({ key, value }); });
-    return () => { alive = false; };
+    wanted.set(key, (wanted.get(key) || 0) + 1);
+    loadContent(key, item).then((value) => { if (alive && value !== SKIPPED) setLoaded({ key, value }); });
+    return () => { alive = false; const n = (wanted.get(key) || 1) - 1; if (n) wanted.set(key, n); else wanted.delete(key); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- key identifies the file version
   if (sync !== undefined) return sync;
   return loaded.key === key ? loaded.value : 'loading';
@@ -157,7 +163,7 @@ const finePointer = () => typeof window !== 'undefined' && window.matchMedia?.('
 
 /** A frame of the video; hovering plays it muted in the card (mouse only). */
 function VideoPreview({ item }) {
-  const thumb = useVideoThumb(item, true);
+  const thumb = useVideoThumb(item, hasBytes(item)); // sample videos have no frames to show
   const src = blobRegistry.get(item.id)?.url || item.dataUrl || null;
   const [playing, setPlaying] = useState(false);
   const timer = useRef(null);

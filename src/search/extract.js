@@ -25,7 +25,7 @@ const isSvg = (blob) => blob?.type === 'image/svg+xml';
 
 /* ---------------- Office Open XML ---------------- */
 async function zipEntries(blob, test) {
-  const entries = await readZip(blob, { maxEntries: 5000 });
+  const entries = await readZip(blob, { maxEntries: 5000, only: test }); // only the parts we read get unpacked
   return entries.filter((e) => !e.dir && test(e.path)).sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
 }
 const xmlOf = (e) => new TextDecoder().decode(e.data);

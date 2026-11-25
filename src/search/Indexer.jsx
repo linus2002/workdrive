@@ -11,8 +11,12 @@ const OCR_TYPES = new Set(['image', 'pdf']);
 /** Changes whenever the file's content (or whether OCR applies to it) changes, so it gets re-indexed. */
 export function indexKey(item, ocrOn) {
   const cat = getFileType(item.ext).category;
-  return `${item.version || 1}|${item.size}|${item.modifiedAt}|${blobRegistry.has(item.id) ? 'b' : ''}${OCR_TYPES.has(cat) && ocrOn ? '|o' : ''}`;
+  // The third part is a placeholder (it was the modified time, which renames change too); see sameKey.
+  return `${item.version || 1}|${item.size}|0|${blobRegistry.has(item.id) ? 'b' : ''}${OCR_TYPES.has(cat) && ocrOn ? '|o' : ''}`;
 }
+
+/** Same contents and flags, ignoring the third part (old keys had the modified time there). */
+export const sameKey = (a, b) => { if (!a || !b) return false; const x = a.split('|'); const y = b.split('|'); x[2] = y[2] = ''; return x.join('|') === y.join('|'); };
 
 const RETRY_AFTER = 60_000;
 const MAX_TRIES = 3;
@@ -20,7 +24,7 @@ const MAX_TRIES = 3;
 const needsIndex = (item, ocrOn) => {
   if (item.type !== 'file' || item.trashed) return false;
   const e = getEntry(item.id);
-  if (e?.key !== indexKey(item, ocrOn)) return true;
+  if (!sameKey(e?.key, indexKey(item, ocrOn))) return true;
   return e.source === 'error' && (e.tries || 1) < MAX_TRIES && Date.now() - e.at > RETRY_AFTER;
 };
 // Cheap formats first, OCR candidates last, so search becomes useful quickly.
@@ -47,14 +51,20 @@ export default function Indexer() {
     for (const id of [...allEntries().keys()]) if (!state.items[id]) removeEntry(id); // permanently deleted
     running.current = true;
     (async () => {
+      // Each pass lists the work once (not once per file, which made indexing thousands of files slow),
+      // then takes files in order, skipping any that changed or were indexed meanwhile. Another pass picks up the rest.
+      let queue = [];
       for (;;) {
         const s = stateRef.current;
         if (s.signedOut) break;
         const ocrOn = s.org.policies.ocr !== false;
-        const queue = Object.values(s.items).filter((i) => needsIndex(i, ocrOn)).sort((a, b) => cost(a) - cost(b));
+        if (!queue.length) {
+          queue = Object.values(s.items).filter((i) => needsIndex(i, ocrOn)).sort((a, b) => cost(a) - cost(b)).map((i) => i.id);
+          if (!queue.length) break;
+        }
         setStatus({ pending: queue.length });
-        if (!queue.length) break;
-        const item = queue[0];
+        const item = s.items[queue.shift()];
+        if (!item || !needsIndex(item, ocrOn)) continue;
         setStatus({ current: item.id });
         const key = indexKey(item, ocrOn);
         let text = '';

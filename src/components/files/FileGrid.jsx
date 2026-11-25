@@ -9,6 +9,8 @@ import Snippet from '../../search/Snippet';
 import { Checkbox } from './FileList';
 import { usePdfThumb } from './usePdfThumb';
 import CardPreview from './CardPreview';
+import { useImageThumb } from './useImageThumb';
+import { blobRegistry } from '../../store/DriveStore';
 
 const coarse = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
@@ -48,9 +50,10 @@ function useTapBehaviour(item, { selectionMode, onClick, onOpen, toggleSelect })
 }
 
 function CardThumb({ item }) {
-  const url = thumbUrl(item);
+  const url = useImageThumb(item, thumbUrl(item));
   const pdfThumb = usePdfThumb(item);
   if (url) return <img src={url} alt="" className="card-img" draggable={false} loading="lazy" />;
+  if (getFileType(item.ext).category === 'image' && blobRegistry.has(item.id)) return <div className="card-icon-thumb" aria-hidden="true" />; // small copy on its way
   if (pdfThumb) return <img src={pdfThumb} alt={`First page of ${item.name}`} className="card-pdf" draggable={false} />;
   return <CardPreview item={item} />;
 }

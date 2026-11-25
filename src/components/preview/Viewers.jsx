@@ -223,6 +223,9 @@ function useCsvRows(item, active) {
 /** True for a CSV the user uploaded (its rows come from the file, not item.sheet or sample data). */
 export const isUploadedCsv = (item) => item.ext === 'csv' && !item.sheet && (!!realUrl(item) || !!item.mime);
 
+const SHEET_MAX_ROWS = 1000;
+const SHEET_MAX_COLS = 50;
+
 export function SheetViewer({ item, editing, sheet, setSheet }) {
   const uploadedBinary = !!realUrl(item) && !item.sheet;
   const csv = isUploadedCsv(item);
@@ -230,7 +233,10 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
   if (uploadedBinary && !['csv'].includes(item.ext)) return <NoPreview item={item} text="Uploaded spreadsheets can't be rendered in this prototype. Download to open in a spreadsheet app." />;
   if (csv && !editing && csvRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
   if (csv && !editing && csvRows === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
-  const rows = editing ? sheet : csv ? csvRows : sampleSheet(item);
+  const all = editing ? sheet : csv ? csvRows : sampleSheet(item);
+  // A big CSV (tens of thousands of rows) would be hundreds of thousands of table cells: show the start.
+  const capped = !editing && (all.length > SHEET_MAX_ROWS || all.some((r) => r.length > SHEET_MAX_COLS));
+  const rows = capped ? all.slice(0, SHEET_MAX_ROWS).map((r) => r.slice(0, SHEET_MAX_COLS)) : all;
   const width = rows.reduce((w, r) => (r.length > w ? r.length : w), 6); // no spread: big CSVs have 100k+ rows
   const height = Math.max(editing ? rows.length : 18, rows.length);
   const set = (r, c, v) => setSheet((s) => {
@@ -242,6 +248,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
   });
   return (
     <div className="viewer-scroll sheet-scroll" tabIndex={0} role="region" aria-label="Spreadsheet">
+      {capped && <div className="sign-message" role="status">Showing the first {Math.min(all.length, SHEET_MAX_ROWS).toLocaleString()} of {all.length.toLocaleString()} rows{all.some((r) => r.length > SHEET_MAX_COLS) ? ` and the first ${SHEET_MAX_COLS} columns` : ''}. Download the file to see all of it.</div>}
       <div className="sheet-wrap">
         <table className="sheet">
           <thead><tr><th className="corner" />{Array.from({ length: width }).map((_, c) => <th key={c}>{col(c)}</th>)}</tr></thead>

@@ -1,4 +1,4 @@
-import { useDrive } from '../../store/DriveStore';
+import { useDrive, blobRegistry } from '../../store/DriveStore';
 import { fileBlob } from '../../store/useItemActions';
 import { renderPdfFirstPage } from '../../utils/pdfThumb';
 import { useThumb } from '../../data/storage/thumbStore';
@@ -9,7 +9,9 @@ import { useThumb } from '../../data/storage/thumbStore';
  */
 export function usePdfThumb(item) {
   const { blobsVersion } = useDrive();
-  const isPdf = item?.type === 'file' && item.ext === 'pdf';
+  // Only real PDFs: a sample file without stored bytes would be generated and drawn on the main thread just for a
+  // thumbnail, while its card can show its text instead (CardPreview).
+  const isPdf = item?.type === 'file' && item.ext === 'pdf' && (blobRegistry.has(item.id) || !!item.dataUrl);
   const key = isPdf ? `pdf:${item.id}@${item.version || 1}` : null;
   const thumb = useThumb(key, async () => {
     const blob = await fileBlob(item);

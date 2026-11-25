@@ -158,14 +158,20 @@ export function usePdfDocument(source, key) {
 function PdfPage({ doc, no, cssW, cssH, onMeasure, children }) {
   const canvasRef = useRef(null);
   const boxRef = useRef(null);
+  // Pages are drawn when they come near the screen and released again when they're far away: a canvas holds
+  // about 16 MB at phone pixel density, so keeping every page of a 300-page PDF crashed mobile browsers.
   const [visible, setVisible] = useState(no <= 2);
   useEffect(() => {
     const el = boxRef.current;
-    if (!el || visible) return undefined;
-    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setVisible(true); }, { rootMargin: '600px' });
+    if (!el) return undefined;
+    const io = new IntersectionObserver((es) => {
+      const near = es.some((e) => e.isIntersecting);
+      setVisible(near);
+      if (!near && canvasRef.current) { canvasRef.current.width = 0; canvasRef.current.height = 0; }
+    }, { rootMargin: '1500px 0px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [visible]);
+  }, []);
   useEffect(() => {
     if (!visible || !doc) return undefined;
     let task = null; let cancelled = false;

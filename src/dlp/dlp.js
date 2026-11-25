@@ -1,6 +1,6 @@
 // Data loss prevention: find sensitive data in a file's indexed text and decide whether a share may go ahead.
 // Detection is pattern-based with validation (Luhn, IBAN checksum, format rules) to keep false positives down.
-import { getEntry } from '../search/searchIndex';
+import { getEntry, indexedCurrent } from '../search/searchIndex';
 import { descendantIds, effectiveShares, ancestors } from '../store/selectors';
 
 const digits = (s) => s.replace(/\D/g, '');
@@ -141,7 +141,7 @@ export function scanPending(state, item) {
   return ids.map((id) => state.items[id]).some((f) => {
     if (!f || f.type !== 'file' || f.trashed) return false;
     const e = getEntry(f.id);
-    return !e?.key?.startsWith(`${f.version || 1}|${f.size}|${f.modifiedAt}|`) || e.source === 'error';
+    return !indexedCurrent(e, f) || e.source === 'error';
   });
 }
 
