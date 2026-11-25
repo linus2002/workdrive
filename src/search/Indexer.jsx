@@ -4,6 +4,7 @@ import { getFileType } from '../utils/fileTypes';
 import { extractText } from './extract';
 import { loadIndex, getEntry, setEntry, removeEntry, allEntries, setStatus, indexStatus, useSearchIndex } from './searchIndex';
 import { suggestFor } from './suggest';
+import { shutdownOcr } from './ocr';
 
 const OCR_TYPES = new Set(['image', 'pdf']);
 
@@ -27,6 +28,11 @@ export default function Indexer() {
   const indexVersion = useSearchIndex();
 
   useEffect(() => { loadIndex(); }, []);
+
+  // The OCR engine holds a worker and ~10 MB of WebAssembly: release it when it can't be used.
+  useEffect(() => {
+    if (state.signedOut || state.org.policies.ocr === false) shutdownOcr();
+  }, [state.signedOut, state.org.policies.ocr]);
 
   useEffect(() => {
     if (state.signedOut || !blobsVersion || !indexStatus().loaded || running.current) return;

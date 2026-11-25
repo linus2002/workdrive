@@ -78,8 +78,8 @@ function useGlobalShortcuts() {
       const el = document.activeElement;
       const typing = el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || (el?.tagName === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || el?.isContentEditable;
       if (typing || ui.dialog || ui.menu || document.querySelector('.popover')) return;
+      if (ui.preview) return; // the preview has its own keys, "?" included
       if (e.key === '?') { e.preventDefault(); ui.openDialog('shortcuts'); return; }
-      if (ui.preview) return;
       const k = e.key.toLowerCase();
       if (pendingG.current && Date.now() - pendingG.current < 1500 && GO[k]) { e.preventDefault(); pendingG.current = 0; navigate(GO[k]); return; }
       pendingG.current = 0;

@@ -119,7 +119,7 @@ function UsersTab() {
             <option value="all">All users</option><option value="Admin">Admins</option><option value="Member">Members</option><option value="Guest">Guests</option><option value="invited">Invited</option><option value="disabled">Deactivated</option>
           </select>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
           <table className="table">
             <thead><tr><th>User</th><th>Role</th><th className="hide-sm">Department</th><th>Status</th><th className="hide-sm">Storage</th><th className="hide-sm">Joined</th><th /></tr></thead>
             <tbody>
@@ -155,7 +155,7 @@ function TeamsTab() {
   const navigate = useNavigate();
   return (
     <Section title="Team management" desc="All team folders in the organization." actions={<button className="btn btn-primary btn-sm" onClick={() => ui.openDialog('teamCreate')}>Create team folder</button>}>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
         <table className="table">
           <thead><tr><th>Team folder</th><th>Members</th><th className="hide-sm">Admins</th><th>Storage</th><th className="hide-sm">Quota</th><th /></tr></thead>
           <tbody>
@@ -264,7 +264,7 @@ function OrganizeTab() {
     <>
       <Section title="Labels" desc="Coloured tags everyone in the organization can apply to files and folders."
         actions={<button className="btn btn-primary btn-sm" onClick={() => ui.openDialog('labelEdit', {})}><Plus size={15} /> New label</button>}>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
           <table className="table">
             <thead><tr><th>Label</th><th>Used on</th><th /></tr></thead>
             <tbody>
@@ -365,7 +365,7 @@ function AuditTab() {
         <select className="select" value={actor} onChange={(e) => setActor(e.target.value)} aria-label="Filter by user"><option value="all">All users</option>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
         <select className="select" value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action"><option value="all">All actions</option>{actions.map((a) => <option key={a}>{a}</option>)}</select>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
         <table className="table">
           <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th className="hide-sm">Details</th><th className="hide-sm">IP address</th></tr></thead>
           <tbody>

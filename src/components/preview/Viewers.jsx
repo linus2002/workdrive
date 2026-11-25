@@ -186,7 +186,10 @@ export function DocViewer({ item, editing, draft, setDraft, zoom }) {
   return <div className="viewer-scroll"><PaperPages text={text || ' '} zoom={zoom} /></div>;
 }
 
-const col = (i) => String.fromCharCode(65 + (i % 26));
+/** Spreadsheet column name: A … Z, AA, AB … */
+const col = (i) => { let n = i + 1; let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+/** A plain number we can format (not "01234" codes, not blank, not 1e5-style text). */
+const isPlainNumber = (v) => typeof v === 'string' ? /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(v.trim()) : typeof v === 'number';
 
 /** Rows of an uploaded CSV read from its bytes: undefined while loading, null if unavailable. */
 /** Most text shown in a preview; bigger files show the start with a note (reading all of it can freeze the tab). */
@@ -228,7 +231,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
   if (csv && !editing && csvRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
   if (csv && !editing && csvRows === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
   const rows = editing ? sheet : csv ? csvRows : sampleSheet(item);
-  const width = Math.max(6, ...rows.map((r) => r.length));
+  const width = rows.reduce((w, r) => (r.length > w ? r.length : w), 6); // no spread: big CSVs have 100k+ rows
   const height = Math.max(editing ? rows.length : 18, rows.length);
   const set = (r, c, v) => setSheet((s) => {
     const n = s.map((row) => [...row]);
@@ -238,7 +241,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
     return n;
   });
   return (
-    <div className="viewer-scroll sheet-scroll">
+    <div className="viewer-scroll sheet-scroll" tabIndex={0} role="region" aria-label="Spreadsheet">
       <div className="sheet-wrap">
         <table className="sheet">
           <thead><tr><th className="corner" />{Array.from({ length: width }).map((_, c) => <th key={c}>{col(c)}</th>)}</tr></thead>
@@ -248,7 +251,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
                 <th>{r + 1}</th>
                 {Array.from({ length: width }).map((_, c) => {
                   const v = rows[r]?.[c] ?? '';
-                  const num = v !== '' && !isNaN(Number(v));
+                  const num = isPlainNumber(v);
                   return editing ? (
                     <td key={c} className="edit"><input value={v} onChange={(e) => set(r, c, e.target.value)} aria-label={`Cell ${col(c)}${r + 1}`} /></td>
                   ) : <td key={c} className={`${num ? 'num' : ''} ${r === 0 ? 'hdr' : ''}`}>{num ? Number(v).toLocaleString() : v}</td>;

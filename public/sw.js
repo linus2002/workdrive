@@ -92,7 +92,9 @@ async function cacheFirst(request, cacheName) {
   const hit = await cache.match(request, MATCH);
   if (hit) return hit;
   const res = await fetch(request);
-  if (res.ok) cache.put(request, res.clone());
+  // A host that answers a missing chunk with index.html (SPA fallback) must not have that page cached as the
+  // script / stylesheet for good: only cache real asset responses.
+  if (res.ok && !(res.headers.get('content-type') || '').includes('text/html')) cache.put(request, res.clone());
   return res;
 }
 

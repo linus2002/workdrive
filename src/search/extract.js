@@ -109,7 +109,8 @@ export async function extractText(item, { ocr = true } = {}) {
   const cat = getFileType(item.ext).category;
   const blob = realBlob(item);
 
-  if (cat === 'text') return { text: tidy(item.content ?? (blob ? await blob.text() : '')), source: 'text' };
+  // Only MAX_TEXT characters are kept: read just the start of a big file (UTF-8 is at most 4 bytes a character).
+  if (cat === 'text') return { text: tidy(item.content ?? (blob ? await blob.slice(0, MAX_TEXT * 4).text() : '')), source: 'text' };
 
   if (cat === 'pdf') {
     if (!blob) return { text: tidy(item.content ?? sampleText(item)), source: 'pdf' };
@@ -126,7 +127,7 @@ export async function extractText(item, { ocr = true } = {}) {
     return null; // legacy .doc / .odt bytes
   }
   if (cat === 'spreadsheet') {
-    if (item.ext === 'csv' && blob) return { text: tidy(await blob.text()), source: 'spreadsheet' };
+    if (item.ext === 'csv' && blob) return { text: tidy(await blob.slice(0, MAX_TEXT * 4).text()), source: 'spreadsheet' };
     if (item.ext === 'xlsx' && blob) return { text: tidy(await xlsxText(blob)), source: 'spreadsheet' };
     if (item.sheet || !blob) return { text: tidy(sampleSheet(item).map((r) => r.join(' ')).join('\n')), source: 'spreadsheet' };
     return null;

@@ -39,11 +39,13 @@ export function sampleWav(seedText, seconds = 12) {
 }
 
 /** Peak amplitudes (0..1) for drawing a waveform. Returns null if the browser can't decode the file. */
-async function peaksOf(url, bars) {
+const MAX_WAVEFORM_BYTES = 60 * 1024 * 1024;
+async function peaksOf(url, bars, size) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return null;
+  if (size > MAX_WAVEFORM_BYTES) return null; // checked before reading: decoding would need several times that
   const data = await (await fetch(url)).arrayBuffer();
-  if (data.byteLength > 60 * 1024 * 1024) return null;
+  if (data.byteLength > MAX_WAVEFORM_BYTES) return null;
   const ctx = new Ctx();
   try {
     const audio = await ctx.decodeAudioData(data);
@@ -90,9 +92,9 @@ export default function AudioPlayer({ item }) {
     let alive = true;
     setPeaks(null); setError(false); setTime(0); setPlaying(false);
     if (!url) return undefined;
-    peaksOf(url, BARS).then((p) => { if (alive) setPeaks(p); }).catch(() => { if (alive) setPeaks(null); });
+    peaksOf(url, BARS, item.size || 0).then((p) => { if (alive) setPeaks(p); }).catch(() => { if (alive) setPeaks(null); });
     return () => { alive = false; };
-  }, [url]);
+  }, [url, item.size]);
 
   useEffect(() => { if (ref.current) ref.current.volume = vol; }, [vol]);
   useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);

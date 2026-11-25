@@ -173,9 +173,9 @@ export function ActivityView() {
                         ) : <strong className="feed-target">{e.target}</strong>}
                       </div>
                       {e.details && <div className="muted small feed-details">{e.details}</div>}
-                      <div className="muted small">{formatDateTime(e.at)}{e.space ? ` · ${spaceLabel(state, e.space)}` : ''}</div>
+                      <div className="muted small">{formatDateTime(e.at)}{(() => { const where = e.space ? spaceLabel(state, e.space) : ''; return where && where !== e.target && where !== e.details ? ` · ${where}` : ''; })()}</div>
                     </div>
-                    {isNew && <span className="new-dot" aria-label="New" />}
+                    {isNew && <span className="new-dot" role="img" aria-label="New" />}
                   </div>
                 </li>
               );

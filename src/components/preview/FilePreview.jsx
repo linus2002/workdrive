@@ -459,7 +459,7 @@ export default function FilePreview() {
 
   return createPortal(
     <div className="preview-overlay fade-in" role="dialog" aria-modal="true" aria-label={`Preview of ${item.name}`} ref={overlayRef} tabIndex={-1}>
-      <header className="preview-bar">
+      <div className="preview-bar" role="group" aria-label="File actions">
         <button className="icon-btn on-dark" onClick={close} aria-label="Close preview" data-tip="Close (Esc)"><X size={20} /></button>
         <FileIcon item={item} size={26} />
         <div className="preview-title min0">
@@ -543,7 +543,7 @@ export default function FilePreview() {
           <button className="icon-btn on-dark" onClick={more} aria-label="More actions" data-tip="More actions"><MoreVertical size={18} /></button>
         </div>
         {keysOpen && <ShortcutsPopover cat={cat} markup={m.active} find={canFind} onClose={() => setKeysOpen(false)} />}
-      </header>
+      </div>
       {m.active && <MarkupToolbar m={m} onCancel={cancelMarkup} onSave={saveMarkup} />}
       {showStale && (
         <div className="markup-stale" role="status">

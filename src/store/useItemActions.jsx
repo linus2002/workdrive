@@ -77,7 +77,7 @@ export function useItemActions() {
   const navigate = useNavigate();
   const { toast, openDialog, openPreview, setDetailsId, requestDetailsTab } = ui;
   const t = useT();
-  const lockHolder = (item) => state.users.find((u) => u.id === item.lock?.by)?.name || t('another user');
+  const lockHolder = useCallback((item) => state.users.find((u) => u.id === item.lock?.by)?.name || t('another user'), [state.users, t]);
 
   const open = useCallback((item, siblings) => {
     if (!item) return;
@@ -406,7 +406,7 @@ export function useItemActions() {
         } }
         : { label: t('Move to Trash'), icon: Trash2, danger: true, onClick: () => trash(items), disabled: !modifiable, hint: modifiable ? undefined : why, shortcut: 'Del' },
     ].filter(Boolean);
-  }, [state, api, open, openDialog, copyLink, download, setFavorite, showDetails, showInFolder, trash, restore, deleteForever, toast, toggleLock, togglePin, extractZip, t]);
+  }, [state, api, lockHolder, open, openDialog, copyLink, download, setFavorite, showDetails, showInFolder, trash, restore, deleteForever, toast, toggleLock, togglePin, extractZip, t]);
 
   return useMemo(() => ({ open, download, copyLink, trash, restore, deleteForever, setFavorite, showDetails, showInFolder, menuFor, toggleLock, togglePin, extractZip }),
     [open, download, copyLink, trash, restore, deleteForever, setFavorite, showDetails, showInFolder, menuFor, toggleLock, togglePin, extractZip]);

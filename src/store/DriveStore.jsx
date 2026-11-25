@@ -27,7 +27,7 @@ import { stateStore, fileStore, requestPersistence, hashSecret } from '../data/s
 const SESSION_KEY = 'workvault-drive:session';
 
 export const DEFAULT_SETTINGS = {
-  theme: 'light', // light | dark | system
+  theme: 'system', // light | dark | system
   density: 'comfortable', // comfortable | compact
   language: '', // empty = follow the browser's language when it's supported (see src/i18n)
   dateFormat: 'relative',

@@ -60,7 +60,8 @@ export default function FileRequestsView() {
                       </div>
                     </div>
                     <span className={`pill ${STATUS[st][1]}`}>{STATUS[st][0]}</span>
-                    <Switch checked={r.enabled} onChange={(v) => { api.updateFileRequest(r.id, { enabled: v }); ui.toast(v ? 'Request reopened' : 'Request closed', { type: 'success' }); }} label={r.enabled ? 'Accepting uploads' : 'Closed'} disabled={gone} />
+                    <Switch checked={r.enabled && st !== 'expired'} onChange={(v) => { api.updateFileRequest(r.id, { enabled: v }); ui.toast(v ? 'Request reopened' : 'Request closed', { type: 'success' }); }}
+                      label={st === 'expired' ? 'Expired: change the closing date to reopen' : r.enabled ? 'Accepting uploads' : 'Closed'} disabled={gone || st === 'expired'} />
                     <button className="icon-btn" onClick={() => copy(r)} aria-label="Copy upload link" data-tip="Copy link" disabled={st !== 'active'}><Copy size={16} /></button>
                     <button className="icon-btn" onClick={() => ui.openDialog('linkTools', { requestId: r.id })} aria-label="QR code for upload link" data-tip="QR code" disabled={gone}><QrCode size={16} /></button>
                     <a className="icon-btn" href={requestUrl(r.id)} target="_blank" rel="noreferrer" aria-label="Open upload page" data-tip="Open upload page"><ExternalLink size={16} /></a>

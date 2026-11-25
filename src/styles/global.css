@@ -1867,3 +1867,13 @@ main .tabs, main .settings-nav {
   /* Previous / next in a phone preview: bottom corners, so they don't sit on the document text. */
   .stage-arrow { top: auto; bottom: 14px; transform: none; width: 40px; height: 40px; opacity: 0.85; }
 }
+
+/* ---------- audit fixes: low-priority polish ---------- */
+/* Same icon box for folders and files, so names line up in list view. */
+.file-row .cell-name > svg:first-child, .file-row .cell-name > img:first-child { flex: none; width: 30px; }
+/* Phone list rows: keep "Yesterday, 7:30 AM" on one line. */
+.name-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-modified { white-space: nowrap; }
+/* Small grey text contrast: spreadsheet row/column headers, menu shortcut hints. */
+.sheet th { color: #4b5563; }
+:root:not([data-theme='dark']) .menu-shortcut, :root:not([data-theme='dark']) .kbd-hint { color: #5f6672; }

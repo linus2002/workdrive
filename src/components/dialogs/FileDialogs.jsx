@@ -131,7 +131,7 @@ export function FolderSelect({ value, onChange, id }) {
 const parseDest = (v) => { const [space, id] = v.split('|'); return { space, parentId: id || null }; };
 
 export function CreateFolderDialog({ parentId, space = 'my', onClose }) {
-  const { api, state } = useDrive();
+  const { api } = useDrive();
   const { toast } = useUI();
   const navigate = useNavigate();
   const [name, setName] = useState('Untitled folder');
