@@ -3,7 +3,7 @@ import { useDrive, registerBlob } from './DriveStore';
 import { useUI } from './UIContext';
 import { uid, splitName, formatSize } from '../utils/format';
 import { getFileType } from '../utils/fileTypes';
-import { myUsage } from './selectors';
+import { quotaError } from './selectors';
 
 export const MAX_FILE_SIZE = 250 * 1024 * 1024; // per-file upload limit for the prototype
 const PERSIST_LIMIT = 400 * 1024; // embed small files in localStorage so they survive reloads
@@ -131,8 +131,8 @@ export function UploadProvider({ children }) {
       if (conflicts.length) { openDialog('uploadConflicts', { files, parentId: parentId || null, space, conflicts }); return; }
     }
     for (const dir of emptyDirs) api.ensureFolderPath(dir.split('/').filter(Boolean), parentId || null, space);
-    let used = myUsage(stateRef.current);
-    const quota = stateRef.current.org.userQuota;
+    // Bytes this batch has already claimed, checked against My Folders or the team folder's quota.
+    let claimed = 0;
     const entries = [];
     for (const [index, file] of [...files].entries()) {
       const decision = opts.decisions?.[index];
@@ -146,9 +146,9 @@ export function UploadProvider({ children }) {
       const replaceId = decision === 'replace' ? opts.replaceIds?.[index] : null;
       let error = null;
       if (file.size > MAX_FILE_SIZE) error = `Exceeds ${formatSize(MAX_FILE_SIZE)} file limit`;
-      else if (space === 'my' && used + file.size > quota) error = 'Not enough storage space';
+      else if (quotaError(stateRef.current, space, claimed + file.size)) error = 'Not enough storage space';
       else if (file.size === 0 && !file.type && !splitName(file.name)[1]) error = 'Empty or unsupported item';
-      if (!error && space === 'my') used += file.size;
+      if (!error) claimed += file.size;
       entries.push({ id: uid('up'), file, name: file.name, size: file.size, parentId: pid, space, replaceId, status: error ? 'error' : 'queued', progress: 0, error, retryable: !error });
     }
     if (!entries.length) {

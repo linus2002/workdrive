@@ -91,6 +91,23 @@ export function planRestore(state, scope, T) {
     if (lockedByOther(state, cur)) { skipped.push({ itemId: id, name: cur.name, reason: 'Locked by another user' }); continue; }
     ops.push({ itemId: id, name: cur.name, kinds, patch, versionId, detail: notes.join(' · ') });
   }
+  // Items left where they are (locked, or not needed) can make the planned moves form a loop (A inside B inside A),
+  // which would hide both from the tree. Any move that would end up inside itself goes to the top instead.
+  const newParent = new Map(ops.filter((o) => 'parentId' in o.patch).map((o) => [o.itemId, o.patch.parentId || null]));
+  const parentAfter = (id) => (newParent.has(id) ? newParent.get(id) : state.items[id]?.parentId ?? null);
+  for (const op of ops) {
+    if (!newParent.has(op.itemId)) continue;
+    let p = parentAfter(op.itemId);
+    for (let n = 0; p && n < 1000; n++) {
+      if (p === op.itemId) {
+        op.patch.parentId = scope.folderId || null;
+        newParent.set(op.itemId, op.patch.parentId);
+        op.detail = [op.detail, 'its old place would put it inside itself: to the top of this folder'].filter(Boolean).join(' · ');
+        break;
+      }
+      p = parentAfter(p);
+    }
+  }
   // Parents before children (untrash/move a folder before its contents), then by name.
   const depth = (id) => { let d = 0; let p = state.items[id]?.parentId; while (p && d < 200) { d++; p = state.items[p]?.parentId; } return d; };
   ops.sort((a, b) => depth(a.itemId) - depth(b.itemId) || a.name.localeCompare(b.name));

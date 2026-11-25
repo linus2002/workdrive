@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Share2, Link2, Globe2, Building2, Lock, X, Copy, Mail, CalendarClock, KeyRound, UserPlus, Download, Droplets, ExternalLink, Check, ShieldAlert, QrCode, Code2, Hourglass, Eye, EyeOff, Users, AlertTriangle } from 'lucide-react';
-import { isGuest, defaultGuestExpiry, accessState } from '../../sharing/guests';
+import { isGuest, defaultGuestExpiry, accessState, sharingPolicyBlock } from '../../sharing/guests';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { effectiveShares, accessOf, canEdit, canManage } from '../../store/selectors';
@@ -25,6 +25,7 @@ export default function ShareDialog({ id, onClose }) {
   const [message, setMessage] = useState('');
   const [notify, setNotify] = useState(true);
   const [focus, setFocus] = useState(false);
+  const [askedSug, setAskedSug] = useState(false); // suggestions open on click or typing, not on the automatic focus
   const [pwd, setPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
@@ -42,14 +43,7 @@ export default function ShareDialog({ id, onClose }) {
 
   const orgDomain = String(state.org.domain || '').toLowerCase();
   /** Why sharing with this address isn't allowed by the admin's sharing policy (null when it is). */
-  const policyBlock = (email) => {
-    const domain = domainOf(email);
-    if (domain === orgDomain) return null;
-    if (!policies.externalSharing) return 'External sharing is disabled by your administrator';
-    const allowed = String(policies.allowedDomains || '').split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
-    if (allowed.length && !allowed.includes(domain)) return `Sharing with @${domain} is not allowed by policy`;
-    return null;
-  };
+  const policyBlock = (email) => sharingPolicyBlock(state, email);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -110,12 +104,14 @@ export default function ShareDialog({ id, onClose }) {
     for (const p of pending) {
       let userId = p.userId;
       const external = isExternalPending(p);
+      // Guests (outside the domain, or given the Guest role) get time-limited access.
+      const guest = external || (userId && isGuest(state, state.users.find((u) => u.id === userId)));
       if (!userId) {
         // New address: invite them (colleagues at your domain join as Members, everyone else as Guests).
         userId = api.addUser({ name: p.email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), email: p.email, role: external ? 'Guest' : 'Member', invitedBy: state.meId });
       }
       // People outside the organization get time-limited access (admin policy); they can be renewed later.
-      entries.push({ userId, role, sharedAt: now, sharedBy: state.meId, ...(external && guestExpiry ? { expires: guestExpiry } : {}) });
+      entries.push({ userId, role, sharedAt: now, sharedBy: state.meId, ...(guest && guestExpiry ? { expires: guestExpiry } : {}) });
     }
     api.setShares(item.id, [...item.sharedWith, ...entries]);
     toast(`Shared "${item.name}" with ${entries.length} ${entries.length === 1 ? 'person' : 'people'}${notify ? ' · notification sent' : ''}`, { type: 'success' });
@@ -210,10 +206,14 @@ export default function ShareDialog({ id, onClose }) {
   const ROLE_HELP = { viewer: 'Can view and download', commenter: 'Can view and comment', editor: 'Can view, edit and share' };
 
   return (
-    <Modal title={<span className="share-title">Share <span className="share-item"><FileIcon item={item} size={20} /> <span className="truncate">{item.name}</span></span></span>}
+    <Modal title={<span className="share-title"><span className="share-word">Share</span> <span className="share-item"><FileIcon item={item} size={20} /> <span className="truncate">{item.name}</span></span></span>}
       onClose={requestClose} width={560} icon={<Share2 size={20} />}
       footer={<>
-        <button className="btn btn-secondary" onClick={copy}><Link2 size={15} /> Copy link</button>
+        {/* With link sharing off, say what the button does: it turns the link on first. */}
+        <button className="btn btn-secondary" onClick={copy} disabled={!link.enabled && !manage}
+          data-tip={link.enabled ? 'Copy the link' : manage ? 'Turns on link sharing with the settings below, then copies the link' : 'Link sharing is off'}>
+          <Link2 size={15} /> {link.enabled || !manage ? 'Copy link' : 'Turn on & copy link'}
+        </button>
         <span className="grow" />
         {pending.length > 0 ? (
           <>
@@ -267,6 +267,8 @@ export default function ShareDialog({ id, onClose }) {
               placeholder={pending.length ? 'Add more…' : 'Add people or email addresses'}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setFocus(true)}
+              // The dialog focuses this field when it opens: only show suggestions once the person uses it.
+              onPointerDown={() => setAskedSug(true)}
               onBlur={() => setTimeout(() => setFocus(false), 150)}
               onKeyDown={(e) => {
                 if (['Enter', ',', ';', 'Tab'].includes(e.key) && query.trim()) {
@@ -283,7 +285,7 @@ export default function ShareDialog({ id, onClose }) {
             />
             <RoleSelect value={role} onChange={setRole} small />
           </div>
-          {focus && (suggestions.length > 0 || query.includes('@')) && (
+          {focus && (askedSug || query.trim()) && (suggestions.length > 0 || query.includes('@')) && (
             <div className="people-suggest pop-in">
               {suggestions.map(({ user: u, blocked }) => (
                 <button key={u.id} className={`suggest-row ${blocked ? 'is-blocked' : ''}`} aria-disabled={!!blocked} title={blocked || undefined}

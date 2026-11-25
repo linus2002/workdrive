@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { useUploads } from '../../store/UploadContext';
@@ -33,6 +33,15 @@ export function useDropTarget(folderId, space, enabled = true) {
   const uploads = useUploads();
   const [over, setOver] = useState(false);
   const depth = useRef(0);
+  // A drop on a nested target (a folder row) stops propagation, so this target never sees dragleave/drop:
+  // reset whenever any drag ends anywhere, or the highlight would stay on.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const reset = () => { depth.current = 0; setOver(false); };
+    window.addEventListener('drop', reset, true);
+    window.addEventListener('dragend', reset, true);
+    return () => { window.removeEventListener('drop', reset, true); window.removeEventListener('dragend', reset, true); };
+  }, [enabled]);
   if (!enabled) return { over: false, props: {} };
   const accepts = (e) => e.dataTransfer.types.includes(DRAG_TYPE) || e.dataTransfer.types.includes('Files');
   return {
@@ -58,7 +67,7 @@ export function useDropTarget(folderId, space, enabled = true) {
           const origin = ids.map((id) => ({ id, parentId: state.items[id]?.parentId || null, space: state.items[id]?.space }));
           const res = api.moveItems(ids, folderId, space);
           const target = folderId ? state.items[folderId]?.name : spaceLabel(state, space);
-          const skipped = [denied + (res.denied || 0) && `${denied + (res.denied || 0)} view-only`, res.locked && `${res.locked} locked`, res.held && `${res.held} on legal hold`].filter(Boolean).join(', ');
+          const skipped = [denied + (res.denied || 0) && `${denied + (res.denied || 0)} view-only`, res.locked && `${res.locked} locked`, res.held && `${res.held} on legal hold`, res.lostAccess && `${res.lostAccess} you'd lose access to (it isn't yours)`].filter(Boolean).join(', ');
           const undo = { label: 'Undo', onClick: () => {
             const groups = new Map();
             origin.forEach((o) => { const k = `${o.space}|${o.parentId || ''}`; if (!groups.has(k)) groups.set(k, { ...o, ids: [] }); groups.get(k).ids.push(o.id); });

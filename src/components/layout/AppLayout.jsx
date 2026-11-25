@@ -78,8 +78,8 @@ function useGlobalShortcuts() {
       const el = document.activeElement;
       const typing = el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || (el?.tagName === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || el?.isContentEditable;
       if (typing || ui.dialog || ui.menu || document.querySelector('.popover')) return;
+      if (ui.preview) return; // the preview has its own keys, "?" included
       if (e.key === '?') { e.preventDefault(); ui.openDialog('shortcuts'); return; }
-      if (ui.preview) return;
       const k = e.key.toLowerCase();
       if (pendingG.current && Date.now() - pendingG.current < 1500 && GO[k]) { e.preventDefault(); pendingG.current = 0; navigate(GO[k]); return; }
       pendingG.current = 0;
@@ -134,12 +134,42 @@ function useIdleTimeout() {
   }, [api, minutes, toast, dismissToast]);
 }
 
+/**
+ * Tab strips that scroll sideways (Settings / Admin sections, page tabs on phones): keep the selected tab in
+ * view, after navigating and after tapping a tab, so people can see where they are.
+ */
+function centerActiveTab(strip, tab) {
+  if (!strip || !tab || strip.scrollWidth <= strip.clientWidth + 1) return;
+  const s = strip.getBoundingClientRect();
+  const t = tab.getBoundingClientRect();
+  strip.scrollLeft += (t.left + t.width / 2) - (s.left + s.width / 2);
+}
+const STRIPS = 'main .tabs, main .settings-nav';
+const ACTIVE = '.active, [aria-selected="true"], [aria-current="page"]';
+function useActiveTabInView(location) {
+  useEffect(() => {
+    const run = () => document.querySelectorAll(STRIPS).forEach((strip) => centerActiveTab(strip, strip.querySelector(ACTIVE)));
+    // Screens load lazily: try again once they've rendered.
+    const timers = [0, 120, 400].map((ms) => setTimeout(run, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [location.pathname, location.search]);
+  useEffect(() => {
+    const onClick = (e) => {
+      const tab = e.target.closest?.(`${STRIPS.split(', ').map((x) => `${x} > *`).join(', ')}`);
+      if (tab) setTimeout(() => centerActiveTab(tab.parentElement, tab.parentElement.querySelector(ACTIVE) || tab), 0);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+}
+
 export default function AppLayout() {
   useGlobalShortcuts();
   useIdleTimeout();
   const { state, persistError } = useDrive();
   const { setMobileNav, hideMenu, closeDialog, closePreview, toast, preview } = useUI();
   const location = useLocation();
+  useActiveTabInView(location);
 
   // Leaving a page closes anything floating over it (menus, mobile nav, dialogs).
   useEffect(() => { setMobileNav(false); hideMenu(); closeDialog(); }, [location.pathname]); // eslint-disable-line

@@ -103,9 +103,10 @@ export function TrashView() {
     message: t('{n, plural, one {All # item in Trash will be permanently deleted. This action cannot be undone.} other {All # items in Trash will be permanently deleted. This action cannot be undone.}}', { n: items.length }),
     confirmLabel: t('Empty Trash'), cancelLabel: t('Cancel'), danger: true,
     onConfirm: () => {
-      const { deleted, held } = api.emptyTrash();
+      const { deleted, held, locked } = api.emptyTrash();
       ui.toast(t('{n, plural, one {# item permanently deleted} other {# items permanently deleted}}', { n: deleted }), { type: 'success' });
       if (held) ui.toast(t('{n, plural, one {# item stays in Trash because of a legal hold} other {# items stay in Trash because of a legal hold}}', { n: held }), { type: 'warning', duration: 6000 });
+      if (locked) ui.toast(t('{n, plural, one {# item stays in Trash because it contains a file someone else has checked out} other {# items stay in Trash because they contain files someone else has checked out}}', { n: locked }), { type: 'warning', duration: 6000 });
     },
   });
   const days = state.org.policies.trashRetentionDays;

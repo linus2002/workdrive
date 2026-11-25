@@ -802,6 +802,7 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .admin-console .pill-green { background: #15803d; }
 .admin-console .pill-amber { background: #b45309; }
 .admin-console .pill-gray { background: #6b7280; }
+.admin-console .pill-red { background: #b91c1c; }
 .table tr.clickable { cursor: pointer; }
 .cell-name-inline { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 340px; }
 .member-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -1398,7 +1399,11 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .public-stage > :first-child { flex: 1 1 auto; min-height: 0; }
 .public-stage.no-copy { user-select: none; -webkit-user-select: none; }
 .watermark { position: absolute; inset: 0; pointer-events: none; background-repeat: repeat; z-index: 3; }
-@media print { .public-stage.no-copy, .public-stage .watermark { display: none !important; } }
+/* Printing: view-only files don't print at all; anything else prints with its watermark (it's part of the copy). */
+@media print {
+  .public-stage.no-copy, .embed-stage.no-copy { display: none !important; }
+  .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 .public-folder { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 8px; }
 .public-folder .breadcrumbs { padding: 0 8px 8px; }
 .public-list { list-style: none; margin: 0; padding: 0; }
@@ -1798,3 +1803,77 @@ button.item-chip:hover { border-color: var(--primary); color: var(--primary); }
 .storage-mini:hover { background: var(--bg-hover); }
 .fav-star-wrap { display: inline-flex; flex: none; }
 .dot-badge.wide { min-width: 20px; }
+
+/* ---------- audit fixes: high-priority layout ---------- */
+.preview-overlay:focus { outline: none; } /* focused on open so keys and screen readers land in the preview */
+/* Share dialog title: keep the word "Share" whole; the file name truncates instead. */
+.share-title .share-word { flex: none; overflow-wrap: normal; }
+.share-title .share-item { flex: 0 1 auto; }
+
+@media (max-width: 960px) {
+  /* Settings / Admin: the content column fills the screen instead of growing to its widest child. */
+  .settings-layout { align-items: stretch; }
+  .settings-content, .settings-content.wide { width: 100%; max-width: none; min-width: 0; }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  /* The closed drawer is off-screen: hide it so Tab doesn't walk through invisible links.
+     visibility switches after the slide-out so the closing animation still shows. */
+  .sidebar:not(.mobile-open) { visibility: hidden; transition: transform 0.2s ease, visibility 0s linear 0.2s; }
+  .sidebar.mobile-open { visibility: visible; transition: transform 0.2s ease; }
+  /* Admin / Settings sections: header buttons wrap under the title; controls never get wider than the screen. */
+  .settings-card-head { flex-wrap: wrap; }
+  .setting-control { max-width: 100%; min-width: 0; }
+  .setting-control .select, .setting-control .input { max-width: 100%; }
+}
+
+/* ---------- audit fixes: medium UI/UX ---------- */
+/* Contrast (WCAG AA) in light mode: a slightly deeper brand blue for text and buttons, darker badge text. */
+:root:not([data-theme='dark']) {
+  --primary: #1170b8;
+  --primary-hover: #0f66a8;
+  --primary-press: #0d5a94;
+  --primary-strong: #0f66a8;
+  --primary-strong-hover: #0d5a94;
+  --primary-strong-press: #0b4f83;
+}
+:root:not([data-theme='dark']) .pill-green { color: #166534; }
+:root:not([data-theme='dark']) .pill-red, :root:not([data-theme='dark']) .due-chip.overdue { color: #b91c1c; }
+:root:not([data-theme='dark']) .pill-gray, :root:not([data-theme='dark']) .due-chip { color: #5f6672; }
+/* Admin console pills use solid backgrounds, so their text stays white over the light-mode tints above. */
+:root .admin-console .pill.pill-green, :root .admin-console .pill.pill-red, :root .admin-console .pill.pill-gray, :root .admin-console .pill.pill-amber, :root .admin-console .pill.pill-blue { color: #fff; }
+.paper-num { color: #6b7280; } /* paper pages are always white */
+
+/* Spreadsheet preview: the stage around the grid follows the dark preview, like other file types. */
+.preview-overlay .sheet-scroll { background: #1b1d21; }
+
+/* Long team-folder / My Folders trees scroll on their own so Recent, Tasks, Trash … stay in reach. */
+.sidebar-nav .tree-capped { max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Tab strips that scroll sideways (phones): a soft shadow shows there's more in that direction.
+   Page-level strips only (dialogs have their own background colour). */
+@media (max-width: 720px) {
+main .tabs, main .settings-nav {
+  background:
+    linear-gradient(to right, var(--bg) 30%, transparent) left / 20px 100% no-repeat local,
+    linear-gradient(to left, var(--bg) 30%, transparent) right / 20px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.16), transparent) left / 8px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.16), transparent) right / 8px 100% no-repeat scroll;
+}
+}
+
+@media (max-width: 720px) {
+  /* Previous / next in a phone preview: bottom corners, so they don't sit on the document text. */
+  .stage-arrow { top: auto; bottom: 14px; transform: none; width: 40px; height: 40px; opacity: 0.85; }
+}
+
+/* ---------- audit fixes: low-priority polish ---------- */
+/* Same icon box for folders and files, so names line up in list view. */
+.file-row .cell-name > svg:first-child, .file-row .cell-name > img:first-child { flex: none; width: 30px; }
+/* Phone list rows: keep "Yesterday, 7:30 AM" on one line. */
+.name-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-modified { white-space: nowrap; }
+/* Small grey text contrast: spreadsheet row/column headers, menu shortcut hints. */
+.sheet th { color: #4b5563; }
+:root:not([data-theme='dark']) .menu-shortcut, :root:not([data-theme='dark']) .kbd-hint { color: #5f6672; }

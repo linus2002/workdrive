@@ -339,4 +339,9 @@ export default {
   "Or sign in with": "O inicia sesión con",
   "Sign in with {name}": "Iniciar sesión con {name}",
   "Display language": "Idioma de la interfaz",
+  "Files": "Archivos",
+  "Select all": "Seleccionar todo",
+  "Deleted {date}": "Eliminado {date}",
+  "Storage used": "Almacenamiento usado",
+  "Actions": "Acciones",
 };

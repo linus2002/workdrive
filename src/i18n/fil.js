@@ -339,4 +339,9 @@ export default {
   "Or sign in with": "O mag-sign in gamit ang",
   "Sign in with {name}": "Mag-sign in gamit ang {name}",
   "Display language": "Wika ng display",
+  "Files": "Mga File",
+  "Select all": "Piliin lahat",
+  "Deleted {date}": "Binura {date}",
+  "Storage used": "Nagamit na storage",
+  "Actions": "Mga aksyon",
 };

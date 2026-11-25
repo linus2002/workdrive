@@ -11,8 +11,21 @@ import { sampleSheet, sampleSlides, sampleText, sampleArchive } from '../../util
 import { FileGlyph } from '../common';
 import { fileBlob } from '../../store/useItemActions';
 import { readZipIndex, safeZipPath, ZipError } from '../../utils/zip';
+import { parseCsv } from '../../utils/csv';
 
 export const realUrl = (item) => blobRegistry.get(item.id)?.url || item.dataUrl || null;
+
+/**
+ * URL that is safe to open in a new tab, or null. A blob: or data: URL runs with this app's origin, so only
+ * types the browser displays without running page scripts are allowed (no SVG, HTML or XML, whatever the extension).
+ */
+const NEW_TAB_TYPES = /^(application\/pdf|image\/(png|jpeg|gif|webp|bmp|avif)|video\/(mp4|webm|ogg|quicktime))$/i;
+export function newTabUrl(item) {
+  const entry = blobRegistry.get(item.id);
+  if (entry) return NEW_TAB_TYPES.test(entry.blob?.type || '') ? entry.url : null;
+  const m = /^data:([^;,]+)/i.exec(item.dataUrl || '');
+  return m && NEW_TAB_TYPES.test(m[1]) ? item.dataUrl : null;
+}
 
 export function ImageViewer({ item, zoom }) {
   const url = realUrl(item) || (item.thumb?.startsWith('gen:') ? genThumb(item.thumb.slice(4)) : genThumb(1));
@@ -78,9 +91,13 @@ function PdfFrame({ url, title }) {
   return <iframe className="pdf-frame" src={url} title={title} />;
 }
 
-export function PdfViewer({ item, zoom, onDownload }) {
+/**
+ * contained: render pages ourselves even where the browser has a PDF viewer. Used on public link and embed
+ * pages, where the browser viewer's own Download / Print buttons would skip the link's download rules.
+ */
+export function PdfViewer({ item, zoom, onDownload, contained = false }) {
   const url = realUrl(item);
-  const [canvas] = useState(pdfNeedsCanvas);
+  const [canvas] = useState(() => contained || pdfNeedsCanvas());
   if (url && canvas) return <PdfCanvasViewer item={item} zoom={zoom} onDownload={onDownload} />;
   if (url) return <PdfFrame url={url} title={item.name} />;
   // Uploaded files carry a mime type; if their bytes are missing, say so instead of showing sample text.
@@ -89,7 +106,10 @@ export function PdfViewer({ item, zoom, onDownload }) {
 }
 
 export function TextViewer({ item, editing, draft, setDraft, mono = true }) {
-  const text = item.content ?? '';
+  // Uploads keep their text inline only under 1 MB; bigger ones are read from the stored bytes.
+  const fromBytes = item.content == null && (!!realUrl(item) || !!item.mime);
+  const loaded = useFileText(item, fromBytes && !editing);
+  const text = item.content ?? loaded?.text ?? '';
   const lang = langOf(item.ext);
   const [mode, setMode] = useState('rendered'); // Markdown only: rendered | source
   useEffect(() => { setMode('rendered'); }, [item.id]); // each file opens in Preview mode
@@ -108,8 +128,18 @@ export function TextViewer({ item, editing, draft, setDraft, mono = true }) {
       </div>
     );
   }
+  if (fromBytes && loaded === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (fromBytes && loaded === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
   if (!text) {
     return <div className="viewer-scroll"><pre className="text-view"><span className="muted">This file is empty.</span></pre></div>;
+  }
+  if (loaded?.truncated) {
+    return (
+      <div className="viewer-scroll">
+        <div className="sign-message" role="status">Showing the first {formatSize(TEXT_PREVIEW_MAX)} of {formatSize(item.size)}. Download the file to see all of it.</div>
+        <CodeViewer code={text} lang={lang === 'markdown' ? null : lang} embedded />
+      </div>
+    );
   }
   if (lang === 'markdown') {
     return (
@@ -156,13 +186,52 @@ export function DocViewer({ item, editing, draft, setDraft, zoom }) {
   return <div className="viewer-scroll"><PaperPages text={text || ' '} zoom={zoom} /></div>;
 }
 
-const col = (i) => String.fromCharCode(65 + (i % 26));
+/** Spreadsheet column name: A … Z, AA, AB … */
+const col = (i) => { let n = i + 1; let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+/** A plain number we can format (not "01234" codes, not blank, not 1e5-style text). */
+const isPlainNumber = (v) => typeof v === 'string' ? /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(v.trim()) : typeof v === 'number';
+
+/** Rows of an uploaded CSV read from its bytes: undefined while loading, null if unavailable. */
+/** Most text shown in a preview; bigger files show the start with a note (reading all of it can freeze the tab). */
+export const TEXT_PREVIEW_MAX = 2 * 1024 * 1024;
+
+/**
+ * Text of a file read from its stored bytes: undefined while loading, null if unavailable,
+ * else { text, truncated }. Only the first TEXT_PREVIEW_MAX bytes are read.
+ */
+function useFileText(item, active) {
+  const { blobsVersion } = useDrive();
+  const [state, setState] = useState({ key: null, value: undefined });
+  const key = active ? `${item.id}@${item.version || 1}#${blobsVersion}` : null;
+  useEffect(() => {
+    if (!key) return undefined;
+    let alive = true;
+    fileBlob(item)
+      .then((b) => (b ? b.slice(0, TEXT_PREVIEW_MAX).text().then((text) => ({ text, truncated: b.size > TEXT_PREVIEW_MAX })) : null))
+      .then((value) => { if (alive) setState({ key, value }); })
+      .catch(() => { if (alive) setState({ key, value: null }); });
+    return () => { alive = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- key identifies the item version
+  return state.key === key ? state.value : undefined;
+}
+
+function useCsvRows(item, active) {
+  const value = useFileText(item, active);
+  return useMemo(() => (value == null ? value : parseCsv(value.text)), [value]);
+}
+
+/** True for a CSV the user uploaded (its rows come from the file, not item.sheet or sample data). */
+export const isUploadedCsv = (item) => item.ext === 'csv' && !item.sheet && (!!realUrl(item) || !!item.mime);
 
 export function SheetViewer({ item, editing, sheet, setSheet }) {
   const uploadedBinary = !!realUrl(item) && !item.sheet;
+  const csv = isUploadedCsv(item);
+  const csvRows = useCsvRows(item, csv && !editing);
   if (uploadedBinary && !['csv'].includes(item.ext)) return <NoPreview item={item} text="Uploaded spreadsheets can't be rendered in this prototype. Download to open in a spreadsheet app." />;
-  const rows = editing ? sheet : sampleSheet(item);
-  const width = Math.max(6, ...rows.map((r) => r.length));
+  if (csv && !editing && csvRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (csv && !editing && csvRows === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
+  const rows = editing ? sheet : csv ? csvRows : sampleSheet(item);
+  const width = rows.reduce((w, r) => (r.length > w ? r.length : w), 6); // no spread: big CSVs have 100k+ rows
   const height = Math.max(editing ? rows.length : 18, rows.length);
   const set = (r, c, v) => setSheet((s) => {
     const n = s.map((row) => [...row]);
@@ -172,7 +241,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
     return n;
   });
   return (
-    <div className="viewer-scroll sheet-scroll">
+    <div className="viewer-scroll sheet-scroll" tabIndex={0} role="region" aria-label="Spreadsheet">
       <div className="sheet-wrap">
         <table className="sheet">
           <thead><tr><th className="corner" />{Array.from({ length: width }).map((_, c) => <th key={c}>{col(c)}</th>)}</tr></thead>
@@ -182,7 +251,7 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
                 <th>{r + 1}</th>
                 {Array.from({ length: width }).map((_, c) => {
                   const v = rows[r]?.[c] ?? '';
-                  const num = v !== '' && !isNaN(Number(v));
+                  const num = isPlainNumber(v);
                   return editing ? (
                     <td key={c} className="edit"><input value={v} onChange={(e) => set(r, c, e.target.value)} aria-label={`Cell ${col(c)}${r + 1}`} /></td>
                   ) : <td key={c} className={`${num ? 'num' : ''} ${r === 0 ? 'hdr' : ''}`}>{num ? Number(v).toLocaleString() : v}</td>;
@@ -270,9 +339,13 @@ export function SlidesViewer({ item, editing, slides, setSlides }) {
   );
 }
 
-export function VideoViewer({ item }) {
+/** contained: hide the browser's own download / picture-in-picture options (public link and embed pages). */
+export function VideoViewer({ item, contained = false }) {
   const url = realUrl(item);
-  if (url) return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay /></div>;
+  if (url) {
+    const lock = contained ? { controlsList: 'nodownload noremoteplayback', disablePictureInPicture: true, onContextMenu: (e) => e.preventDefault() } : {};
+    return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay {...lock} /></div>;
+  }
   return (
     <div className="viewer-center dark">
       <div className="video-placeholder">

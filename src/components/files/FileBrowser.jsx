@@ -13,6 +13,7 @@ import { FileCard, FolderTile } from './FileGrid';
 import { COLUMNS, nameSort } from './columns';
 import FileDetailsPanel from './FileDetailsPanel';
 import { useDropTarget } from './dnd';
+import { t as tr } from '../../i18n'; // `t` is a local timer name here
 
 const PAGE = 40;
 const DAY = 86400000;
@@ -149,6 +150,7 @@ export default function FileBrowser({
     setLoading(true);
     setSelected(new Set());
     setFocusId(null);
+    setAnchor(null);
     setVisible(PAGE);
     setFilters({ type: 'all', modified: 'any', owner: 'any', ...(initialFilters || {}) });
     ui.setDetailsId(fallbackDetailsItem?.id || null);
@@ -283,7 +285,7 @@ export default function FileBrowser({
 
   const onRowClick = useCallback((e, item) => {
     if (e.shiftKey && anchor) {
-      const ids = processed.map((i) => i.id);
+      const ids = (view === 'grid' ? gridOrder : processed).map((i) => i.id);
       const [a, b] = [ids.indexOf(anchor), ids.indexOf(item.id)].sort((x, y) => x - y);
       setSelected(new Set(ids.slice(a, b + 1)));
     } else if (e.metaKey || e.ctrlKey) {
@@ -294,7 +296,7 @@ export default function FileBrowser({
       setAnchor(item.id);
     }
     setFocusId(item.id);
-  }, [anchor, processed, toggleSelect]);
+  }, [anchor, processed, gridOrder, view, toggleSelect]);
 
   const onOpen = useCallback((item) => actions.open(item, processed), [actions, processed]);
 
@@ -344,11 +346,13 @@ export default function FileBrowser({
   useEffect(() => {
     const onKey = (e) => {
       if (ui.dialog || ui.preview || ui.menu) return;
-      const el = document.activeElement;
-      const tag = el?.tagName;
-      // Ignore keys while typing, but not when focus is just on a selection checkbox.
-      const typing = tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || el?.isContentEditable;
-      if (typing) return;
+      // Ignore keys while typing, but not when focus is just on a selection checkbox. Check the event target
+      // too: a field can blur itself while handling the key (the search box does on Enter / Escape).
+      const isTypingEl = (el) => {
+        const tag = el?.tagName;
+        return tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio'].includes(el.type)) || !!el?.isContentEditable;
+      };
+      if (isTypingEl(document.activeElement) || isTypingEl(e.target)) return;
       if (document.querySelector('.popover')) return;
       const idx = processed.findIndex((i) => i.id === focusId);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -369,14 +373,17 @@ export default function FileBrowser({
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && view === 'grid')) {
         e.preventDefault();
         const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1;
-        let next = processed[Math.max(0, Math.min(processed.length - 1, idx < 0 ? 0 : idx + step))];
+        // Step through the order on screen: the grid shows folders first even when the list doesn't.
+        const order = view === 'grid' ? gridOrder : processed;
+        const oi = order.findIndex((i) => i.id === focusId);
+        let next = order[Math.max(0, Math.min(order.length - 1, oi < 0 ? 0 : oi + step))];
         if (virtual && view === 'grid' && idx >= 0) {
           const gi = gridOrder.findIndex((i) => i.id === focusId);
           next = (e.key === 'ArrowDown' || e.key === 'ArrowUp') ? (gridStep(focusId, step) || processed[idx]) : gridOrder[Math.max(0, Math.min(gridOrder.length - 1, gi + step))];
         } else if (view === 'grid' && idx >= 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
           // Up/Down move by one visual row in the grid.
-          const id = gridNeighbour(rootRef.current, processed.slice(0, visible).map((i) => i.id), processed[idx].id, step);
-          next = id ? processed.find((i) => i.id === id) : (step > 0 ? processed[Math.min(processed.length - 1, visible - 1)] : processed[idx]);
+          const id = gridNeighbour(rootRef.current, gridOrder.map((i) => i.id), processed[idx].id, step);
+          next = id ? gridOrder.find((i) => i.id === id) : (step > 0 ? gridOrder[gridOrder.length - 1] : processed[idx]);
           if (step > 0 && !id && visible < processed.length) setVisible((v) => Math.min(processed.length, v + PAGE));
         }
         if (!next) return;
@@ -395,7 +402,7 @@ export default function FileBrowser({
         if (!next) return;
         setFocusId(next.id);
         if (e.shiftKey && anchor) {
-          const ids = processed.map((i) => i.id);
+          const ids = order.map((i) => i.id);
           const [a, b] = [ids.indexOf(anchor), ids.indexOf(next.id)].sort((x, y) => x - y);
           setSelected(new Set(ids.slice(a, b + 1)));
         } else { setSelected(new Set([next.id])); setAnchor(next.id); }
@@ -504,7 +511,7 @@ export default function FileBrowser({
             <div className="grid-wrap">
               {folders.length > 0 && (
                 <>
-                  {foldersFirst && <div className="grid-section">Folders</div>}
+                  {foldersFirst && <div className="grid-section">{tr('Folders')}</div>}
                   <div className="folder-grid" ref={folderWin.ref} style={folderWin.style}>
                     {folders.slice(folderWin.start, folderWin.end).map((item) => <FolderTile key={item.id} item={item} selected={selected.has(item.id)} focused={focusId === item.id} onClick={onRowClick} canDropInto={canDropInto(item)} {...common} />)}
                   </div>
@@ -512,7 +519,7 @@ export default function FileBrowser({
               )}
               {files.length > 0 && (
                 <>
-                  {foldersFirst && folders.length > 0 && <div className="grid-section">Files</div>}
+                  {foldersFirst && folders.length > 0 && <div className="grid-section">{tr('Files')}</div>}
                   <div className="file-grid" ref={fileWin.ref} style={fileWin.style}>
                     {files.slice(fileWin.start, fileWin.end).map((item) => <FileCard key={item.id} item={item} selected={selected.has(item.id)} focused={focusId === item.id} onClick={onRowClick} {...common} />)}
                   </div>

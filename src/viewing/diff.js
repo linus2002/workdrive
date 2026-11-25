@@ -121,7 +121,9 @@ export function foldRows(rows, context = 3) {
 /** Cell-by-cell comparison of two spreadsheets. */
 export function diffSheets(a, b) {
   const rows = Math.max(a.length, b.length);
-  const cols = Math.max(0, ...a.map((r) => r.length), ...b.map((r) => r.length));
+  let cols = 0;
+  for (const r of a) if (r.length > cols) cols = r.length;
+  for (const r of b) if (r.length > cols) cols = r.length;
   const cells = [];
   let changed = 0; let added = 0; let removed = 0;
   for (let r = 0; r < rows; r++) {

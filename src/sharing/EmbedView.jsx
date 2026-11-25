@@ -9,7 +9,7 @@ import { formatSize } from '../utils/format';
 import { saveBlob } from '../utils/exporters';
 import { linkStatus, deviceLabel, sessionIp } from '../utils/sharing';
 import { verifySecret, storedSecret } from '../data/storage/secrets';
-import { checkShare } from '../dlp/dlp';
+import { checkShare, scanPending } from '../dlp/dlp';
 import { useSearchIndex, indexStatus } from '../search/searchIndex';
 import { FileIcon } from '../components/common';
 import { viewerFor, Watermark, useIsDark } from '../views/PublicViews';
@@ -73,7 +73,7 @@ export default function EmbedView() {
   const isPreview = q.get('preview') === '1' && !!signedIn && !state.signedOut && !!alive && accessOf(state, item) !== 'none';
   const isPublic = status.ok && status.link.access === 'anyone';
   // The DLP check reads the search index, which loads asynchronously: wait for it instead of letting files through.
-  const dlpPending = isPublic && !indexReady;
+  const dlpPending = isPublic && (!indexReady || scanPending(state, item));
   const dlpBlocked = isPublic && indexReady && checkShare(state, item, 'public').decision === 'block';
   const needsPassword = isPublic && status.passwordProtected && !unlocked;
   const canView = isPublic && !dlpPending && !dlpBlocked && !needsPassword && embeddable(item);
@@ -85,13 +85,26 @@ export default function EmbedView() {
   useEffect(() => {
     if (canView && !isPreview && !logged.current) { logged.current = true; api.logLinkAccess(id, { ...visitor, event: 'viewed' }); }
   }, [canView]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Blocked visits show in link activity too, as they do for the link page.
+  const blockedLogged = useRef({});
+  const logBlocked = (event, extra = {}) => {
+    if (isPreview || blockedLogged.current[event]) return;
+    blockedLogged.current[event] = true;
+    api.logLinkAccess(id, { ...visitor, event, ...extra });
+  };
+  const expired = alive && status.reason === 'expired';
+  useEffect(() => { if (expired) logBlocked('blocked-expired'); }, [expired]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (dlpBlocked) logBlocked('blocked-dlp'); }, [dlpBlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const download = async () => {
     const fresh = api.get();
     const st = linkStatus(fresh, fresh.items[id]);
-    if (!st.ok || !st.canDownload || st.link.access !== 'anyone') return;
+    if (!st.ok || !st.canDownload || st.link.access !== 'anyone') {
+      if (st.limitReached) { setDlErr('The download limit for this link has been reached.'); if (!isPreview) api.logLinkAccess(id, { ...visitor, event: 'blocked-limit', file: item.name }); }
+      return;
+    }
     // Re-check data protection at the moment of download (the index or the policy may have changed).
-    if (!indexStatus().loaded || checkShare(fresh, fresh.items[id], 'public').decision === 'block') { setDlErr('This file can’t be downloaded right now.'); return; }
+    if (!indexStatus().loaded || scanPending(fresh, fresh.items[id]) || checkShare(fresh, fresh.items[id], 'public').decision === 'block') { setDlErr('This file can’t be downloaded right now.'); return; }
     let blob;
     try {
       blob = (await fileBlob(item)) || new Blob([`${item.name}\n\nSample file in the prototype.`], { type: 'text/plain' });

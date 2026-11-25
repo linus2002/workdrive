@@ -83,7 +83,12 @@ export function applyUpdate() {
 }
 
 export function registerServiceWorker() {
-  if (!import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (!import.meta.env.PROD) {
+    // Dev server: a worker left by a production build on this same address would keep serving its cache.
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => {});
+    return;
+  }
   pageVersion = versionFrom(document) || 'app';
   const start = async () => {
     try {

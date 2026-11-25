@@ -49,6 +49,7 @@ export function CollabBadges({ item, state }) {
   );
 }
 import { COLUMNS } from './columns';
+import { t } from '../../i18n';
 import { formatDate, formatSize } from '../../utils/format';
 import { getFileType } from '../../utils/fileTypes';
 import { useDropTarget, dragSourceProps } from './dnd';
@@ -67,7 +68,7 @@ export const FileRow = memo(function FileRow({
   query, selectedIds, draggable, canDropInto, context, teamColor, showSnippets, rowIndex,
 }) {
   const drop = useDropTarget(item.id, item.space, item.type === 'folder' && canDropInto);
-  const sub = item.type === 'folder' ? 'Folder' : item.type === 'shortcut' ? 'Shortcut' : `${getFileType(item.ext).label} · ${formatSize(item.size)}`;
+  const sub = item.type === 'folder' ? t('Folder') : item.type === 'shortcut' ? t('Shortcut') : `${getFileType(item.ext).label} · ${formatSize(item.size)}`;
   return (
     <div
       className={`file-row ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${drop.over ? 'drop-over' : ''}`}
@@ -88,7 +89,7 @@ export const FileRow = memo(function FileRow({
           <button className="name-text truncate" onClick={(e) => { e.stopPropagation(); onOpen(item); }} title={item.name} tabIndex={-1}>
             <Highlight text={item.name} query={query} />
           </button>
-          <span className="name-sub">{context === 'trash' ? `Deleted ${formatDate(item.trashedAt)}` : `${sub} · ${formatDate(item.modifiedAt)}`}</span>
+          <span className="name-sub">{context === 'trash' ? t('Deleted {date}', { date: formatDate(item.trashedAt) }) : `${sub} · ${formatDate(item.modifiedAt)}`}</span>
           {showSnippets && query && <Snippet id={item.id} q={query} name={item.name} radius={0} />}
         </div>
         <RowLabels item={item} state={state} />
@@ -123,10 +124,10 @@ export function FileListHeader({ columns, sort, onSort, allChecked, someChecked,
   );
   return (
     <div className="file-row file-head" role="row" aria-rowindex={1}>
-      <div className="cell cell-check" role="columnheader" aria-label="Select all"><Checkbox checked={allChecked} indeterminate={someChecked && !allChecked} onChange={onToggleAll} label="Select all" /></div>
-      <div className="cell cell-name" role="columnheader" aria-sort={ariaSort('name')}><Head k="name" label="Name" /></div>
+      <div className="cell cell-check" role="columnheader" aria-label={t('Select all')}><Checkbox checked={allChecked} indeterminate={someChecked && !allChecked} onChange={onToggleAll} label={t('Select all')} /></div>
+      <div className="cell cell-name" role="columnheader" aria-sort={ariaSort('name')}><Head k="name" label={t('Name')} /></div>
       {columns.map((key) => <div key={key} className={`cell cell-${key}`} role="columnheader" aria-sort={ariaSort(key)}><Head k={key} label={COLUMNS[key].label} /></div>)}
-      <div className="cell cell-actions" role="columnheader"><span className="sr-only">Actions</span></div>
+      <div className="cell cell-actions" role="columnheader"><span className="sr-only">{t('Actions')}</span></div>
     </div>
   );
 }

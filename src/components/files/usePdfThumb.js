@@ -13,24 +13,28 @@ const failed = new Set();
 export function usePdfThumb(item) {
   const { api } = useDrive();
   const isPdf = item?.type === 'file' && item.ext === 'pdf';
-  const thumb = isPdf ? item.pdfThumb || null : null;
+  // The saved thumbnail belongs to one version: a new or restored version gets a fresh one.
+  const version = item?.version || 1;
+  const current = isPdf && item.pdfThumb && (item.pdfThumbOf ?? 1) === version;
+  const thumb = current ? item.pdfThumb : null;
+  const key = isPdf ? `${item.id}@${version}` : null;
 
   useEffect(() => {
-    if (!isPdf || thumb || inFlight.has(item.id) || failed.has(item.id)) return;
-    inFlight.add(item.id);
+    if (!isPdf || thumb || inFlight.has(key) || failed.has(key)) return;
+    inFlight.add(key);
     (async () => {
       try {
         const blob = await fileBlob(item);
         if (!blob) throw new Error('no data');
         const url = await renderPdfFirstPage(blob);
-        api.updateItem(item.id, { pdfThumb: url }, { touch: false });
+        api.updateItem(item.id, { pdfThumb: url, pdfThumbOf: version }, { touch: false });
       } catch {
-        failed.add(item.id); // unreadable/encrypted PDF: keep the placeholder
+        failed.add(key); // unreadable/encrypted PDF: keep the placeholder
       } finally {
-        inFlight.delete(item.id);
+        inFlight.delete(key);
       }
     })();
-  }, [isPdf, thumb, item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPdf, thumb, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return thumb;
 }

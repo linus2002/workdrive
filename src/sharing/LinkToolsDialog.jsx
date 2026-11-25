@@ -85,7 +85,7 @@ function QrPanel({ url, title, notice }) {
     if (!w) { toast('Allow pop-ups to print the QR code', { type: 'error' }); return; }
     const org = (brand.enabled && brand.displayName?.trim()) || state.org.name;
     w.document.write(`<!doctype html><title>${attr(title)} – QR code</title><style>body{font-family:Poppins,Segoe UI,Arial,sans-serif;text-align:center;padding:40px;color:#111827}img.qr{width:320px;height:320px}h1{font-size:20px;margin:16px 0 4px}p{color:#6b7280;font-size:13px;word-break:break-all}img.logo{height:36px}</style>`
-      + `<img class="logo" src="${attr(brandLogo)}" alt=""><h1>${attr(title)}</h1><p>Scan with your phone camera to open</p><img class="qr" src="${png}" alt="QR code"><p>${attr(url)}</p><p>${attr(org)}</p><script>window.onload=()=>{setTimeout(()=>{window.print()},200)}<\/script>`);
+      + `<img class="logo" src="${attr(brandLogo)}" alt=""><h1>${attr(title)}</h1><p>Scan with your phone camera to open</p><img class="qr" src="${png}" alt="QR code"><p>${attr(url)}</p><p>${attr(org)}</p><script>window.onload=()=>{setTimeout(()=>{window.print()},200)}</` + 'script>');
     w.document.close();
   };
 

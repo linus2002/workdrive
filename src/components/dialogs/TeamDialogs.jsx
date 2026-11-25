@@ -5,6 +5,8 @@ import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { formatDate } from '../../utils/format';
 import { teamRoleOf } from '../../store/selectors';
+import { isGuest, sharingPolicyBlock, defaultGuestExpiry } from '../../sharing/guests';
+import { checkSpaceShare } from '../../dlp/dlp';
 import { Modal, Avatar, RoleSelect, EmptyState } from '../common';
 import { colourName } from './OrganizeDialogs';
 
@@ -139,10 +141,35 @@ export function TeamMembersDialog({ teamId, onClose }) {
         <div className="add-panel">
           <div className="row-between"><strong>Add members</strong><button className="link-btn" onClick={() => setAdding(false)}>Close</button></div>
           <MemberPicker exclude={team.members.map((m) => m.userId)} onAdd={(userId, role) => {
-            api.addTeamMembers(team.id, [{ userId, role }]);
             const u = state.users.find((x) => x.id === userId);
-            api.pushNotification({ type: 'team', actorId: state.meId, text: `added ${u.name} to "${team.name}" as ${role}`, link: `/team-folders/${team.id}` });
-            toast(`${u.name} added as ${role}`, { type: 'success' });
+            const guest = isGuest(state, u);
+            const add = () => {
+              // Guests get time-limited access, as when sharing a file with them.
+              const expires = guest ? defaultGuestExpiry(state) : null;
+              api.addTeamMembers(team.id, [{ userId, role, ...(expires ? { expires, sharedAt: Date.now(), sharedBy: state.meId } : {}) }]);
+              api.pushNotification({ type: 'team', actorId: state.meId, text: `added ${u.name} to "${team.name}" as ${role}`, link: `/team-folders/${team.id}` });
+              toast(`${u.name} added as ${role}${expires ? ` until ${formatDate(expires)}` : ''}`, { type: 'success' });
+            };
+            if (!guest) { add(); return; }
+            // Adding a guest shares the whole team folder outside the organization: same rules as the Share dialog.
+            const why = sharingPolicyBlock(state, u.email);
+            if (why) { toast(why, { type: 'error' }); return; }
+            const verdict = checkSpaceShare(state, team.id, 'external');
+            if (verdict.decision === 'block') {
+              api.logEvent('Share blocked (DLP)', team.name, `Add guest ${u.email} · ${verdict.files.length} file(s) with sensitive data`, { teamId: team.id });
+              toast(`Can't add ${u.name}: "${team.name}" contains ${verdict.files.length} file${verdict.files.length === 1 ? '' : 's'} with sensitive data`, { type: 'error', duration: 7000 });
+              return;
+            }
+            if (verdict.decision === 'warn') {
+              openDialog('confirm', {
+                title: 'Share sensitive files outside the organization?',
+                message: `"${team.name}" contains ${verdict.files.length} file${verdict.files.length === 1 ? '' : 's'} with sensitive data. ${u.name} (${u.email}) is outside ${state.org.name}.`,
+                confirmLabel: 'Add anyway', danger: true,
+                onConfirm: () => { api.logEvent('DLP warning overridden', team.name, `Added guest ${u.email}`, { teamId: team.id }); add(); },
+              });
+              return;
+            }
+            add();
           }} />
         </div>
       ) : (

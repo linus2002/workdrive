@@ -11,6 +11,17 @@ export const isGuest = (state, u) => !!u && u.id !== state.meId && (u.role === '
 
 export const domainOf = (email) => String(email || '').split('@')[1]?.toLowerCase() || '';
 
+/** Why the admin's sharing policy doesn't allow giving this address access (null when it does). */
+export function sharingPolicyBlock(state, email) {
+  const policies = state.org.policies;
+  const domain = domainOf(email);
+  if (domain === String(state.org.domain || '').toLowerCase()) return null;
+  if (!policies.externalSharing) return 'External sharing is disabled by your administrator';
+  const allowed = String(policies.allowedDomains || '').split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+  if (allowed.length && !allowed.includes(domain)) return `Sharing with @${domain} is not allowed by policy`;
+  return null;
+}
+
 /** 'active' | 'expiring' | 'expired' | 'open' (no expiry) */
 export function accessState(expires, now = Date.now()) {
   if (!expires) return 'open';

@@ -45,7 +45,7 @@ export default function TeamFoldersView() {
   return (
     <div className="page">
       <PageHeader title="Team Folders" subtitle="Shared spaces where teams store, organize and collaborate on files."
-        actions={<button className="btn btn-primary" onClick={() => ui.openDialog('teamCreate')}><Plus size={16} /> <span className="btn-text">Create team folder</span></button>}>
+        actions={<button className="btn btn-primary" onClick={() => ui.openDialog('teamCreate')} aria-label="Create team folder"><Plus size={16} /> <span className="btn-text">Create team folder</span></button>}>
         <div className="file-toolbar plain">
           <div className="seg" role="radiogroup" aria-label="Scope">
             <button role="radio" aria-checked={scope === 'mine'} className={scope === 'mine' ? 'active' : ''} onClick={() => setScope('mine')}>My team folders</button>

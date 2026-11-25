@@ -114,12 +114,12 @@ function UsersTab() {
       </div>
       <Section title="User management" desc="Invite people, assign roles and control account status." actions={<button className="btn btn-primary btn-sm" onClick={() => setEdit('new')}><UserPlus size={15} /> Invite user</button>}>
         <div className="table-tools">
-          <div className="input-icon"><Search size={15} /><input className="input" placeholder="Search users" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="input-icon"><Search size={15} /><input className="input" aria-label="Search users" placeholder="Search users" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <select className="select" value={role} onChange={(e) => setRole(e.target.value)} aria-label="Filter users">
             <option value="all">All users</option><option value="Admin">Admins</option><option value="Member">Members</option><option value="Guest">Guests</option><option value="invited">Invited</option><option value="disabled">Deactivated</option>
           </select>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
           <table className="table">
             <thead><tr><th>User</th><th>Role</th><th className="hide-sm">Department</th><th>Status</th><th className="hide-sm">Storage</th><th className="hide-sm">Joined</th><th /></tr></thead>
             <tbody>
@@ -155,7 +155,7 @@ function TeamsTab() {
   const navigate = useNavigate();
   return (
     <Section title="Team management" desc="All team folders in the organization." actions={<button className="btn btn-primary btn-sm" onClick={() => ui.openDialog('teamCreate')}>Create team folder</button>}>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
         <table className="table">
           <thead><tr><th>Team folder</th><th>Members</th><th className="hide-sm">Admins</th><th>Storage</th><th className="hide-sm">Quota</th><th /></tr></thead>
           <tbody>
@@ -194,7 +194,7 @@ function StorageTab() {
       <StorageAnalytics />
       <Section title="Quotas" desc={`${formatSize(total)} of ${formatSize(state.org.quota)} used across the organization`}>
         <SettingRow title="Per-user storage quota" desc="Applies to each user's My Folders space.">
-          <select className="select" value={state.org.userQuota} onChange={(e) => { api.updateOrg({ userQuota: Number(e.target.value) }); toast('User quota updated', { type: 'success' }); }}>
+          <select className="select" aria-label="Per-user storage quota" value={state.org.userQuota} onChange={(e) => { api.updateOrg({ userQuota: Number(e.target.value) }); toast('User quota updated', { type: 'success' }); }}>
             {[0.5, 1, 5, 15, 100].map((g) => <option key={g} value={g * 1024 ** 3}>{g >= 1 ? `${g} GB` : `${g * 1024} MB`}</option>)}
           </select>
         </SettingRow>
@@ -264,7 +264,7 @@ function OrganizeTab() {
     <>
       <Section title="Labels" desc="Coloured tags everyone in the organization can apply to files and folders."
         actions={<button className="btn btn-primary btn-sm" onClick={() => ui.openDialog('labelEdit', {})}><Plus size={15} /> New label</button>}>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
           <table className="table">
             <thead><tr><th>Label</th><th>Used on</th><th /></tr></thead>
             <tbody>
@@ -325,19 +325,19 @@ function PoliciesTab() {
         <SettingRow title="Allow public links" desc="“Anyone with the link” access for shared links."><Switch checked={p.publicLinks} onChange={(v) => set('publicLinks', v)} label="Public links" /></SettingRow>
         <SettingRow title="Require password for public links"><Switch checked={p.linkPasswordRequired} onChange={(v) => set('linkPasswordRequired', v)} label="Require link password" /></SettingRow>
         <SettingRow title="Default link expiry" desc="New public links expire after this many days.">
-          <select className="select" value={p.linkExpiryDays} onChange={(e) => set('linkExpiryDays', Number(e.target.value))}>{[0, 7, 14, 30, 90].map((d) => <option key={d} value={d}>{d ? `${d} days` : 'Never'}</option>)}</select>
+          <select className="select" aria-label="Default link expiry" value={p.linkExpiryDays} onChange={(e) => set('linkExpiryDays', Number(e.target.value))}>{[0, 7, 14, 30, 90].map((d) => <option key={d} value={d}>{d ? `${d} days` : 'Never'}</option>)}</select>
         </SettingRow>
         <SettingRow title="Restrict downloads for viewers" desc="Viewers can preview files but not download them."><Switch checked={p.downloadRestriction} onChange={(v) => set('downloadRestriction', v)} label="Restrict downloads" /></SettingRow>
         <SettingRow title="Watermark public links" desc="Always overlay a watermark on files opened through “Anyone with the link” shares."><Switch checked={!!p.watermarkPublicLinks} onChange={(v) => set('watermarkPublicLinks', v)} label="Watermark public links" /></SettingRow>
         <SettingRow title="Allow file requests" desc="Members can create upload-only links that let anyone send files into a folder."><Switch checked={p.fileRequests !== false} onChange={(v) => set('fileRequests', v)} label="Allow file requests" /></SettingRow>
         <SettingRow title="Allowed external domains" desc="Comma-separated. Leave empty to allow any domain.">
-          <div className="inline-form"><input className="input" value={domains} onChange={(e) => setDomains(e.target.value)} /><button className="btn btn-secondary btn-sm" disabled={domains === p.allowedDomains} onClick={() => set('allowedDomains', domains)}>Save</button></div>
+          <div className="inline-form"><input className="input" aria-label="Allowed external domains" value={domains} onChange={(e) => setDomains(e.target.value)} /><button className="btn btn-secondary btn-sm" disabled={domains === p.allowedDomains} onClick={() => set('allowedDomains', domains)}>Save</button></div>
         </SettingRow>
       </Section>
       <Section title="Security policies">
         <SettingRow title="Enforce two-factor authentication" desc="All members must set up 2FA at next sign-in."><Switch checked={p.twoFactor} onChange={(v) => set('twoFactor', v)} label="Enforce 2FA" /></SettingRow>
         <SettingRow title="Session timeout">
-          <select className="select" value={p.sessionTimeout} onChange={(e) => set('sessionTimeout', Number(e.target.value))}>{[15, 30, 60, 240, 720].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? 's' : ''}`}</option>)}</select>
+          <select className="select" aria-label="Session timeout" value={p.sessionTimeout} onChange={(e) => set('sessionTimeout', Number(e.target.value))}>{[15, 30, 60, 240, 720].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? 's' : ''}`}</option>)}</select>
         </SettingRow>
       </Section>
     </>
@@ -361,11 +361,11 @@ function AuditTab() {
   return (
     <Section title="Audit logs" desc="A record of activity across your organization." actions={<button className="btn btn-secondary btn-sm" onClick={exportCsv}><Download size={14} /> Export CSV</button>}>
       <div className="table-tools">
-        <div className="input-icon"><Search size={15} /><input className="input" placeholder="Search target or details" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="input-icon"><Search size={15} /><input className="input" aria-label="Search the audit log" placeholder="Search target or details" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <select className="select" value={actor} onChange={(e) => setActor(e.target.value)} aria-label="Filter by user"><option value="all">All users</option>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
         <select className="select" value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action"><option value="all">All actions</option>{actions.map((a) => <option key={a}>{a}</option>)}</select>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table">
         <table className="table">
           <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th className="hide-sm">Details</th><th className="hide-sm">IP address</th></tr></thead>
           <tbody>

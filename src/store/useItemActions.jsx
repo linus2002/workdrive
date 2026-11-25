@@ -8,7 +8,7 @@ import {
 import { signWaitingForMe } from '../signatures/signing';
 import { useDrive, blobRegistry, registerBlob, blobsReady } from './DriveStore';
 import { useUI } from './UIContext';
-import { accessOf, canEdit, folderRoute, parentRoute, descendantIds, ancestors, isTrashedDeep, lockedByOther, canForceUnlock, openCommentCount, isPinned, shortcutTarget, uniqueName, canCommentAccess, blocksPermanentDelete, canManage, canDownload, quotaError, shareActive } from './selectors';
+import { accessOf, canEdit, folderRoute, parentRoute, liveDescendantIds, ancestors, isTrashedDeep, lockedByOther, lockedInside, canForceUnlock, openCommentCount, isPinned, shortcutTarget, uniqueName, canCommentAccess, blocksPermanentDelete, canManage, canDownload, quotaError, shareActive } from './selectors';
 import { getFileType, MIME, genThumb } from '../utils/fileTypes';
 import { makeZip, makePdf, makeDocx, makeXlsx, svgToRaster, svgToRasterNatural, dataUrlToBlob, saveBlob } from '../utils/exporters';
 import { sampleSheet, sampleText, sampleSlides, sampleArchive } from '../utils/sampleContent';
@@ -77,7 +77,7 @@ export function useItemActions() {
   const navigate = useNavigate();
   const { toast, openDialog, openPreview, setDetailsId, requestDetailsTab } = ui;
   const t = useT();
-  const lockHolder = (item) => state.users.find((u) => u.id === item.lock?.by)?.name || t('another user');
+  const lockHolder = useCallback((item) => state.users.find((u) => u.id === item.lock?.by)?.name || t('another user'), [state.users, t]);
 
   const open = useCallback((item, siblings) => {
     if (!item) return;
@@ -134,7 +134,7 @@ export function useItemActions() {
       for (const it of list) {
         if (it.type === 'file') await addFile(it, it.name);
         else {
-          const ids = descendantIds(s.items, it.id).filter((id) => !s.items[id].trashed);
+          const ids = liveDescendantIds(s.items, it.id); // not trashed subfolders' contents either
           for (const id of ids) {
             const d = s.items[id];
             if (d.type !== 'file') continue;
@@ -218,11 +218,16 @@ export function useItemActions() {
   }, [api, toast, t]);
 
   const trash = useCallback((all) => {
-    const locked = all.filter((i) => lockedByOther(state, i));
-    const denied = all.filter((i) => !lockedByOther(state, i) && !canEdit(accessOf(state, i)) && i.ownerId !== state.meId);
+    // A folder holding a file someone else has checked out can't be deleted either (the file would go with it).
+    const locked = all.filter((i) => lockedInside(state, i.id));
+    const denied = all.filter((i) => !locked.includes(i) && !canEdit(accessOf(state, i)) && i.ownerId !== state.meId);
     const items = all.filter((i) => !locked.includes(i) && !denied.includes(i));
     if (locked.length) {
-      toast(locked.length === 1 ? t('"{name}" is locked by {user} and can\'t be deleted', { name: locked[0].name, user: lockHolder(locked[0]) }) : t('{n} locked files were skipped', { n: locked.length }), { type: 'error' });
+      const one = locked[0];
+      const file = lockedInside(state, one.id);
+      toast(locked.length > 1 ? t('{n} locked items were skipped', { n: locked.length })
+        : file.id === one.id ? t('"{name}" is locked by {user} and can\'t be deleted', { name: one.name, user: lockHolder(one) })
+          : t('"{name}" contains "{file}", which {user} has checked out, so it can\'t be deleted', { name: one.name, file: file.name, user: lockHolder(file) }), { type: 'error' });
     }
     if (denied.length) toast(denied.length === 1 ? t('You can only view "{name}", so it can\'t be deleted', { name: denied[0].name }) : t('{n} view-only items were skipped', { n: denied.length }), { type: 'warning' });
     if (!items.length) return;
@@ -258,8 +263,9 @@ export function useItemActions() {
       message: items.length === 1 ? t('"{name}" will be deleted forever. This action cannot be undone.', { name: items[0].name }) : t('{n} items will be deleted forever. This action cannot be undone.', { n: items.length }),
       confirmLabel: t('Delete forever'), cancelLabel: t('Cancel'), danger: true,
       onConfirm: () => {
-        const { deleted, held } = api.deleteForever(items.map((i) => i.id));
+        const { deleted, held, locked } = api.deleteForever(items.map((i) => i.id));
         if (deleted) toast(deleted === 1 ? t('Permanently deleted') : t('{n} items permanently deleted', { n: deleted }), { type: 'success' });
+        if (locked) toast(t('{n, plural, one {# item contains a file someone else has checked out, so it wasn\'t deleted} other {# items contain files someone else has checked out, so they weren\'t deleted}}', { n: locked }), { type: 'warning', duration: 6000 });
         if (held) toast(t('{n, plural, one {# item is on legal hold and can\'t be permanently deleted} other {# items are on legal hold and can\'t be permanently deleted}}', { n: held }), { type: 'warning', duration: 6000 });
       },
     });
@@ -400,7 +406,7 @@ export function useItemActions() {
         } }
         : { label: t('Move to Trash'), icon: Trash2, danger: true, onClick: () => trash(items), disabled: !modifiable, hint: modifiable ? undefined : why, shortcut: 'Del' },
     ].filter(Boolean);
-  }, [state, api, open, openDialog, copyLink, download, setFavorite, showDetails, showInFolder, trash, restore, deleteForever, toast, toggleLock, togglePin, extractZip, t]);
+  }, [state, api, lockHolder, open, openDialog, copyLink, download, setFavorite, showDetails, showInFolder, trash, restore, deleteForever, toast, toggleLock, togglePin, extractZip, t]);
 
   return useMemo(() => ({ open, download, copyLink, trash, restore, deleteForever, setFavorite, showDetails, showInFolder, menuFor, toggleLock, togglePin, extractZip }),
     [open, download, copyLink, trash, restore, deleteForever, setFavorite, showDetails, showInFolder, menuFor, toggleLock, togglePin, extractZip]);
