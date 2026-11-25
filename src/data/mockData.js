@@ -583,7 +583,7 @@ export const ORG = {
     linkExpiryDays: 30,
     downloadRestriction: false,
     allowedDomains: 'getmeds.ph',
-    twoFactor: true,
+    twoFactor: false,
     sessionTimeout: 60,
     trashRetentionDays: 60,
     maxVersions: 25, // older file versions beyond this are discarded

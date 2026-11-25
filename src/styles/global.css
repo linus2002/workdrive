@@ -1904,3 +1904,11 @@ main .tabs, main .settings-nav {
 
 /* Touch screens keep finger-sized menu rows. */
 @media (pointer: coarse) { .menu-item { height: 38px; font-size: 14px; } .menu-item.has-hint { min-height: 38px; } .menu-icon { width: 16px; height: 16px; } }
+
+/* 2FA setup QR, sign-in code step, file request closing date */
+.twofa-qr { display: block; width: 168px; height: 168px; margin: 10px 0 6px; border-radius: 8px; border: 1px solid var(--border); background: #fff; }
+.login-code { letter-spacing: 0.35em; font-variant-numeric: tabular-nums; text-align: center; font-size: 20px; }
+.login-code-help { color: var(--text-2); margin: 0 0 14px; }
+.request-date { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 6px 12px 12px 56px; }
+.request-date .field { margin: 0; }
+@media (max-width: 600px) { .request-date { padding-left: 12px; } }

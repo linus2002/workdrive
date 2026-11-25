@@ -73,7 +73,7 @@ function seedState() {
 }
 
 /** The newest state format this build understands (seedVersion after all migrations). */
-export const SEED_VERSION = 13;
+export const SEED_VERSION = 14;
 
 const THUMB_FIELDS = ['pdfThumb', 'pdfThumbOf', 'videoThumb', 'videoThumbOf', 'videoThumbV', 'videoDuration'];
 function dropSavedThumbs(items) {
@@ -109,7 +109,7 @@ function dropEmbeddedCopies(s) {
   return items ? { ...s, items } : s;
 }
 
-/** Turn a saved state object (any seedVersion 1..13) into current state; seed data when missing or unusable. */
+/** Turn a saved state object (any seedVersion 1..14) into current state; seed data when missing or unusable. */
 function hydrate(parsed) {
   try {
     if (parsed) {
@@ -263,6 +263,12 @@ function hydrate(parsed) {
             return extra.length ? { ...t, members: [...t.members, ...extra.map(guestMemberEntry)] } : t;
           });
           merged.seedVersion = 13;
+        }
+        // One-time migration: "Enforce two-factor authentication" had no effect before, and the sample data had it on.
+        // Now that it's enforced, start with it off rather than lock everyone out at their next sign-in.
+        if ((merged.seedVersion || 1) < 14) {
+          merged.org = { ...merged.org, policies: { ...merged.org.policies, twoFactor: false } };
+          merged.seedVersion = 14;
         }
         // "Keep me signed in" off: the sign-in lasts only for this browser session.
         // Thumbnails used to be saved on items; they now live in their own cache (thumbStore), not in localStorage.
@@ -1125,9 +1131,16 @@ export function DriveStoreProvider({ children }) {
       },
 
       setLink(id, rawLink) {
-        const link = normalizeLink(rawLink);
+        const normalized = normalizeLink(rawLink);
         update((s) => {
-          const had = s.items[id]?.link?.enabled;
+          const prev = s.items[id]?.link;
+          const had = prev?.enabled;
+          // A link that just became public gets the organization's default expiry (Admin → Policies), unless it has one.
+          const days = Number(s.org.policies.linkExpiryDays) || 0;
+          const becamePublic = normalized?.enabled && normalized.access === 'anyone' && !(prev?.enabled && prev.access === 'anyone');
+          const link = becamePublic && days && !normalized.expires
+            ? { ...normalized, expires: new Date(new Date().setHours(23, 59, 59, 0) + days * 86400000).getTime() }
+            : normalized;
           let ns = patchItems(s, { [id]: { link } });
           if (link?.enabled && !had) ns = log(ns, 'Link created', s.items[id].name, link.access === 'anyone' ? 'Anyone with the link' : 'Organization', { itemId: id });
           return ns;

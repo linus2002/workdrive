@@ -15,6 +15,7 @@ import { useUI } from '../../store/UIContext';
 import { useUploads } from '../../store/UploadContext';
 import { readDrop } from '../../utils/dropFiles';
 import useLiveNotifications from '../../notifications/useLiveNotifications';
+import { twoFactorMissing } from '../../store/account';
 
 /** Full-window overlay shown when OS files are dragged anywhere over the app. */
 function GlobalDropOverlay() {
@@ -172,6 +173,13 @@ export default function AppLayout() {
   const { setMobileNav, hideMenu, closeDialog, closePreview, toast, preview } = useUI();
   const location = useLocation();
   useActiveTabInView(location);
+
+  // The organization requires 2FA and it isn't set up: the setup page is the only place to go.
+  const navigateTo = useNavigate();
+  const needs2fa = !state.signedOut && twoFactorMissing(state);
+  useEffect(() => {
+    if (needs2fa && location.pathname !== '/settings/security') navigateTo('/settings/security?setup=2fa', { replace: true });
+  }, [needs2fa, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaving a page closes anything floating over it (menus, mobile nav, dialogs).
   useEffect(() => { setMobileNav(false); hideMenu(); closeDialog(); }, [location.pathname]); // eslint-disable-line

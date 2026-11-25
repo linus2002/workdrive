@@ -96,7 +96,16 @@ export function TeamCreateDialog({ onClose }) {
               );
             })}
           </div>
-          <MemberPicker exclude={[state.meId, ...members.map((m) => m.userId)]} onAdd={(userId, role) => setMembers([...members, { userId, role }])} />
+          <MemberPicker exclude={[state.meId, ...members.map((m) => m.userId)]} onAdd={(userId, role) => {
+            // Guests follow the same rules as when they're added later: sharing policy, and time-limited access.
+            const u = state.users.find((x) => x.id === userId);
+            if (!isGuest(state, u)) { setMembers([...members, { userId, role }]); return; }
+            const why = sharingPolicyBlock(state, u.email);
+            if (why) { toast(why, { type: 'error' }); return; }
+            const expires = defaultGuestExpiry(state);
+            setMembers([...members, { userId, role, ...(expires ? { expires, sharedAt: Date.now(), sharedBy: state.meId } : {}) }]);
+            if (expires) toast(`${u.name} is a guest: access ends ${formatDate(expires)}`, { type: 'info' });
+          }} />
         </div>
       </form>
     </Modal>
