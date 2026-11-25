@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { useDrive, registerBlob } from './DriveStore';
+import { useDrive, registerBlob, INLINE_TEXT_MAX } from './DriveStore';
 import { useUI } from './UIContext';
 import { uid, splitName, formatSize } from '../utils/format';
 import { getFileType } from '../utils/fileTypes';
 import { quotaError } from './selectors';
 
 export const MAX_FILE_SIZE = 250 * 1024 * 1024; // per-file upload limit for the prototype
-const PERSIST_LIMIT = 400 * 1024; // embed small files in localStorage so they survive reloads
+// File bytes are kept in IndexedDB; only short text is also kept inline (see INLINE_TEXT_MAX).
 
 const UploadCtx = createContext(null);
 
@@ -23,8 +23,7 @@ export async function readUploadExtras(file) {
   const cat = getFileType(ext).category;
   const out = { ext };
   try {
-    if (cat === 'text' && file.size < 1024 * 1024) out.content = await readAs(file, 'text');
-    if (file.size <= PERSIST_LIMIT && ['image', 'pdf'].includes(cat)) out.dataUrl = await readAs(file, 'url');
+    if (cat === 'text' && file.size <= INLINE_TEXT_MAX) out.content = await readAs(file, 'text');
   } catch { /* fall back to blob only */ }
   return out;
 }

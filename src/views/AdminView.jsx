@@ -38,11 +38,14 @@ function UserDialog({ user, onClose }) {
   const { toast } = useUI();
   const [f, setF] = useState(user ? { ...user } : { name: '', email: '', role: 'Member', title: '', dept: '' });
   const emailTaken = state.users.some((u) => u.email.toLowerCase() === f.email.trim().toLowerCase() && u.id !== user?.id);
-  const err = !f.name.trim() ? 'Name is required' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email) ? 'Enter a valid email' : emailTaken ? 'A user with this email already exists' : null;
+  // Your own role can't be changed here (no locking yourself out), and the last active admin can't be demoted.
+  const isSelf = user?.id === state.meId;
+  const lastAdmin = user?.role === 'Admin' && f.role !== 'Admin' && state.users.filter((x) => x.role === 'Admin' && x.status !== 'disabled').length <= 1;
+  const err = !f.name.trim() ? 'Name is required' : lastAdmin ? 'This is the last active admin. Make someone else an admin first.' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email) ? 'Enter a valid email' : emailTaken ? 'A user with this email already exists' : null;
   const submit = (e) => {
     e.preventDefault();
     if (err) return;
-    if (user) { api.updateUser(user.id, { name: f.name.trim(), email: f.email.trim(), role: f.role, title: f.title, dept: f.dept }); toast('User updated', { type: 'success' }); }
+    if (user) { api.updateUser(user.id, { name: f.name.trim(), email: f.email.trim(), role: isSelf ? user.role : f.role, title: f.title, dept: f.dept }); toast('User updated', { type: 'success' }); }
     else { api.addUser({ name: f.name.trim(), email: f.email.trim(), role: f.role, title: f.title, dept: f.dept }); toast(`Invitation sent to ${f.email.trim()}`, { type: 'success' }); }
     onClose();
   };
@@ -53,11 +56,11 @@ function UserDialog({ user, onClose }) {
         <label className="field"><span className="field-label">Full name</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
         <label className="field"><span className="field-label">Email</span><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder={`name@${state.org.domain}`} /></label>
         <div className="form-grid">
-          <label className="field"><span className="field-label">Role</span><select className="select full" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option>Admin</option><option>Member</option><option>Guest</option></select></label>
+          <label className="field"><span className="field-label">Role</span><select className="select full" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} disabled={isSelf} title={isSelf ? 'You can’t change your own role' : undefined}><option>Admin</option><option>Member</option><option>Guest</option></select></label>
           <label className="field"><span className="field-label">Department</span><input className="input" value={f.dept} onChange={(e) => setF({ ...f, dept: e.target.value })} /></label>
         </div>
         <label className="field"><span className="field-label">Job title</span><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-        {err && f.email && <span className="field-error">{err}</span>}
+        {err && (f.email || lastAdmin) && <span className="field-error">{err}</span>}
       </form>
     </Modal>
   );

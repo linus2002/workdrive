@@ -14,6 +14,7 @@ import { useDrive, currentSessionId } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { useUploads } from '../../store/UploadContext';
 import { readDrop } from '../../utils/dropFiles';
+import useLiveNotifications from '../../notifications/useLiveNotifications';
 
 /** Full-window overlay shown when OS files are dragged anywhere over the app. */
 function GlobalDropOverlay() {
@@ -166,6 +167,7 @@ function useActiveTabInView(location) {
 export default function AppLayout() {
   useGlobalShortcuts();
   useIdleTimeout();
+  useLiveNotifications();
   const { state, persistError } = useDrive();
   const { setMobileNav, hideMenu, closeDialog, closePreview, toast, preview } = useUI();
   const location = useLocation();

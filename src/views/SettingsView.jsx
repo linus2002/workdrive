@@ -121,6 +121,7 @@ function Preferences() {
 
 function Notifications() {
   const { state, api } = useDrive();
+  const { toast } = useUI();
   const n = state.settings.notifications;
   const set = (k) => (v) => api.updateSettings({ notifications: { ...n, [k]: v } });
   return (
@@ -128,9 +129,26 @@ function Notifications() {
       <Section title="Delivery" desc="Choose where you receive notifications.">
         <SettingRow title="Email notifications" desc="Get a message in your inbox."><Switch checked={n.email} onChange={set('email')} label="Email notifications" /></SettingRow>
         <SettingRow title="Desktop notifications" desc="Show browser notifications while the app is open.">
-          <Switch checked={n.desktop} onChange={async (v) => { if (v && 'Notification' in window) { try { await Notification.requestPermission(); } catch { /* noop */ } } set('desktop')(v); }} label="Desktop notifications" />
+          <Switch checked={n.desktop && typeof Notification !== 'undefined' && Notification.permission === 'granted'} onChange={async (v) => {
+            if (v) {
+              let perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+              if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch { /* noop */ } }
+              if (perm !== 'granted') {
+                toast(perm === 'unsupported' ? 'This browser doesn’t support desktop notifications' : 'Desktop notifications are blocked. Allow them in your browser’s site settings, then try again.', { type: 'warning' });
+                return;
+              }
+            }
+            set('desktop')(v);
+          }} label="Desktop notifications" />
         </SettingRow>
+        <SettingRow title="Pop-up alerts" desc="Show a short message in the corner when something new arrives."><Switch checked={n.popups !== false} onChange={set('popups')} label="Pop-up alerts" /></SettingRow>
         <SettingRow title="Weekly digest" desc="A summary of activity in your team folders every Monday."><Switch checked={n.weeklyDigest} onChange={set('weeklyDigest')} label="Weekly digest" /></SettingRow>
+      </Section>
+      <Section title="Live activity" desc="Teammates comment, share, upload and assign tasks on your workspace every minute or two, and you're notified as it happens (demo).">
+        <SettingRow title="Live teammate activity"><Switch checked={n.live !== false} onChange={set('live')} label="Live teammate activity" /></SettingRow>
+        <SettingRow title="Try it now" desc="Have a teammate do something right away.">
+          <button className="btn btn-secondary btn-sm" onClick={() => api.simulateActivity()}>Simulate activity</button>
+        </SettingRow>
       </Section>
       <Section title="Activity" desc="Pick which events notify you.">
         <SettingRow title="Someone shares a file with me"><Switch checked={n.shares} onChange={set('shares')} label="Shares" /></SettingRow>

@@ -1,6 +1,6 @@
 import { memo, useRef } from 'react';
-import { MoreVertical, Star, Users, Link2, Play, Lock, MessageSquare, CornerUpRight } from 'lucide-react';
-import { FileIcon, FileGlyph, Highlight, thumbUrl, FolderGlyph } from '../common';
+import { MoreVertical, Star, Users, Link2, Lock, MessageSquare, CornerUpRight } from 'lucide-react';
+import { FileIcon, Highlight, thumbUrl, FolderGlyph } from '../common';
 import { formatDate, formatSize } from '../../utils/format';
 import { getFileType } from '../../utils/fileTypes';
 import { itemCount, openCommentCount, labelsOf, shortcutTarget } from '../../store/selectors';
@@ -8,6 +8,7 @@ import { useDropTarget, dragSourceProps } from './dnd';
 import Snippet from '../../search/Snippet';
 import { Checkbox } from './FileList';
 import { usePdfThumb } from './usePdfThumb';
+import CardPreview from './CardPreview';
 
 const coarse = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
@@ -49,29 +50,9 @@ function useTapBehaviour(item, { selectionMode, onClick, onOpen, toggleSelect })
 function CardThumb({ item }) {
   const url = thumbUrl(item);
   const pdfThumb = usePdfThumb(item);
-  const t = getFileType(item.ext);
   if (url) return <img src={url} alt="" className="card-img" draggable={false} loading="lazy" />;
-  if (pdfThumb) {
-    return (
-      <div className="card-pdf" style={{ '--tc': t.color }}>
-        <img src={pdfThumb} alt={`First page of ${item.name}`} draggable={false} />
-      </div>
-    );
-  }
-  return (
-    <div className="card-icon-thumb" style={{ '--tc': t.color }}>
-      {t.category === 'video' && <span className="play-badge"><Play size={18} fill="currentColor" /></span>}
-      {t.category === 'document' || t.category === 'pdf' || t.category === 'text' ? (
-        <div className="mini-page">
-          <span className="ln w80" /><span className="ln" /><span className="ln w90" /><span className="ln w60" /><span className="ln" /><span className="ln w70" />
-        </div>
-      ) : t.category === 'spreadsheet' ? (
-        <div className="mini-sheet">{Array.from({ length: 16 }).map((_, i) => <span key={i} />)}</div>
-      ) : t.category === 'presentation' ? (
-        <div className="mini-slide"><span className="ln w60" /><span className="blk" /></div>
-      ) : t.category !== 'video' ? <FileGlyph ext={item.ext} size={56} /> : null}
-    </div>
-  );
+  if (pdfThumb) return <img src={pdfThumb} alt={`First page of ${item.name}`} className="card-pdf" draggable={false} />;
+  return <CardPreview item={item} />;
 }
 
 export const FolderTile = memo(function FolderTile({ item, state, selected, focused, selectionMode, onClick, onOpen, onContext, onMore, toggleSelect, query, selectedIds, draggable, canDropInto, teamColor }) {

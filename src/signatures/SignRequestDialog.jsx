@@ -9,6 +9,8 @@ import { Modal } from '../components/common';
 import { PdfPages, usePdfDocument } from '../viewing/PdfPages';
 import { FIELD_KINDS, SIGNER_COLORS, isEmail } from './signing';
 import { FieldBox } from './SignUI';
+import { sharingPolicyBlock, domainOf } from '../sharing/guests';
+import { checkShare, summarize } from '../dlp/dlp';
 
 const STEPS = ['Recipients', 'Place fields', 'Review & send'];
 const blankSigner = () => ({ key: uid('s'), userId: null, name: '', email: '', external: true });
@@ -67,7 +69,8 @@ export default function SignRequestDialog({ itemId, onClose }) {
     if (!s.name.trim()) return 'Enter a name';
     if (!isEmail(s.email.trim())) return 'Enter a valid email address';
     if (emails.indexOf(emails[i]) !== i) return 'This person is already a signer';
-    return null;
+    // Signers outside the organization get the document, so the admin's sharing policy applies to them too.
+    return sharingPolicyBlock(state, s.email.trim());
   };
   const recipientsOk = signers.length > 0 && signers.every((s, i) => !signerError(s, i));
 
@@ -102,7 +105,29 @@ export default function SignRequestDialog({ itemId, onClose }) {
   const missingSig = signers.map((_, i) => !fields.some((f) => f.signerIndex === i && f.kind === 'signature'));
   const fieldsOk = !missingSig.some(Boolean);
 
+  const isExternal = (s) => domainOf(s.email.trim()) !== String(state.org.domain || '').toLowerCase();
+  /** Sending to people outside the organization goes through the same sensitive-data check as sharing. */
   const send = () => {
+    if (!signers.some(isExternal)) { doSend(); return; }
+    const verdict = checkShare(state, item, 'external');
+    if (verdict.decision === 'allow') { doSend(); return; }
+    const found = summarize(verdict.files[0].findings, 2);
+    if (verdict.decision === 'block') {
+      api.logEvent('Signature request blocked (DLP)', item.name, `External signer · ${found}`, { itemId: item.id });
+      ui.toast(`Can't send to people outside the organization: this file contains sensitive data (${found})`, { type: 'error', duration: 7000 });
+      return;
+    }
+    ui.pushDialog('confirm', {
+      title: 'Send sensitive data outside the organization?',
+      message: `This file contains ${found}. People outside the organization will be able to open it.`,
+      confirmLabel: 'Send anyway', danger: true,
+      onConfirm: () => {
+        api.logEvent('DLP warning overridden', item.name, `Signature request to external signer · ${found}`, { itemId: item.id });
+        setTimeout(doSend, 0); // after the confirmation closes, so this dialog is the one that closes
+      },
+    });
+  };
+  const doSend = () => {
     const id = api.createSignRequest({
       itemId, title, message, sequential, due: fromDateInput(due),
       signers: signers.map((s) => ({ userId: s.userId, name: s.name, email: s.email })),

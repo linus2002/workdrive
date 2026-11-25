@@ -35,6 +35,62 @@ async function docxText(blob) {
   if (!doc) return '';
   return stripXml(xmlOf(doc).replace(/<\/w:p>/g, '\n').replace(/<w:tab\/>/g, '\t').replace(/<w:br\/>/g, '\n'));
 }
+/* ---- Structured first-page content for grid thumbnails ---- */
+
+/** Paragraphs of a .docx: [{ text, heading }] (headings: Title / Heading styles). */
+export async function docxParagraphs(blob, max = 60) {
+  const [doc] = await zipEntries(blob, (p) => p === 'word/document.xml');
+  if (!doc) return [];
+  const out = [];
+  for (const p of xmlOf(doc).split('</w:p>')) {
+    if (out.length >= max) break;
+    const style = /<w:pStyle w:val="([^"]+)"/.exec(p)?.[1] || '';
+    const text = stripXml(p.replace(/<w:tab\/>/g, '\t').replace(/<w:br\/>/g, '\n')).trim();
+    if (!text) continue; // empty paragraphs are just spacing
+    // Headings: a Title/Heading style, or a short paragraph whose runs are all bold.
+    const runs = p.match(/<w:r[ >][\s\S]*?<\/w:r>/g) || [];
+    const allBold = runs.length > 0 && runs.every((r) => !/<w:t[ >]/.test(r) || /<w:b(?: w:val="(?:1|true)")?\/>/.test(r));
+    out.push({ text, heading: /^(Title|Heading|Subtitle)/i.test(style) || (allBold && text.length < 120) });
+  }
+  return out;
+}
+
+/** Top-left cells of the first worksheet of an .xlsx as rows of strings. */
+export async function xlsxGrid(blob, maxRows = 30, maxCols = 10) {
+  const parts = await zipEntries(blob, (p) => p === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(p));
+  const shared = parts.find((e) => e.path === 'xl/sharedStrings.xml');
+  const sheet = parts.find((e) => e.path.startsWith('xl/worksheets/'));
+  if (!sheet) return [];
+  const strings = shared ? xmlOf(shared).split('</si>').slice(0, -1).map((si) => stripXml(si.replace(/<rPh[\s\S]*?<\/rPh>/g, ''))) : [];
+  const colNo = (ref) => [...ref].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  const rows = [];
+  const re = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+  const xml = xmlOf(sheet);
+  for (let m = re.exec(xml); m; m = re.exec(xml)) {
+    const ref = /\br="([A-Z]+)(\d+)"/.exec(m[1]);
+    if (!ref) continue;
+    const r = Number(ref[2]) - 1; const c = colNo(ref[1]);
+    if (r >= maxRows) break;
+    if (c >= maxCols) continue;
+    const type = /\bt="(\w+)"/.exec(m[1])?.[1];
+    const body = m[2] || '';
+    const v = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1];
+    const val = type === 's' ? strings[Number(v)] ?? '' : type === 'inlineStr' ? stripXml(body) : decodeXml(v ?? '');
+    (rows[r] ||= [])[c] = val;
+  }
+  let width = 0;
+  for (let i = 0; i < rows.length; i++) width = Math.max(width, rows[i]?.length || 0);
+  return Array.from({ length: rows.length }, (_, i) => Array.from({ length: width }, (__, j) => rows[i]?.[j] ?? ''));
+}
+
+/** Title and body of the first slide of a .pptx. */
+export async function pptxFirstSlide(blob) {
+  const [slide] = await zipEntries(blob, (p) => /^ppt\/slides\/slide1\.xml$/.test(p));
+  if (!slide) return null;
+  const lines = xmlOf(slide).split('</a:p>').map((p) => stripXml(p).trim()).filter(Boolean);
+  return { title: lines[0] || '', body: lines.slice(1).join('\n') };
+}
+
 async function xlsxText(blob) {
   const parts = await zipEntries(blob, (p) => p === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(p));
   return parts.map((e) => stripXml(xmlOf(e).replace(/<\/(si|row|c)>/g, (m) => (m === '</c>' ? ' ' : '\n')))).join('\n');
