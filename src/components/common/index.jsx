@@ -58,8 +58,16 @@ export function FolderGlyph({ size = 32, color = '#F5B840', shared = false, team
   );
 }
 
+/**
+ * Picture icons for the common file types: public/icons/filetypes (128 px), made from the originals in
+ * design/filetypeicons by design/make_filetype_icons.py. Other types keep the drawn label icon below.
+ */
+const TYPE_ICON = { document: 'docx', spreadsheet: 'excel', presentation: 'ppt', pdf: 'pdf', image: 'image', archive: 'zip' };
+
 export function FileGlyph({ ext, size = 32 }) {
   const t = getFileType(ext);
+  const icon = TYPE_ICON[t.category];
+  if (icon) return <img className="file-glyph" src={`/icons/filetypes/${icon}.png`} width={size} height={size} alt="" aria-hidden="true" draggable={false} />;
   return (
     <svg className="file-glyph" viewBox="0 0 32 40" width={size * 0.8} height={size} aria-hidden="true">
       <path d="M4 1h17l10 10v25a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3z" fill="var(--file-bg)" stroke="var(--file-stroke)" />
