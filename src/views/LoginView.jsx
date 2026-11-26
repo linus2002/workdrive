@@ -2,6 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, AlertCircle, Info, ChevronDown } from 'lucide-react';
 import { useDrive, useMe, SIGNOUT_REASON_KEY } from '../store/DriveStore';
+import { checkPassword, twoFactorOn, twoFactorMissing, securityOf } from '../store/account';
+import { verifyTotp } from '../utils/totp';
 import { useT } from '../i18n';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -157,6 +159,12 @@ export default function LoginView() {
   const emailRef = useRef(null);
   const pwRef = useRef(null);
   const phoneRef = useRef(null);
+  // Second step when 2FA is on: the 6-digit code from the authenticator app.
+  const [step, setStep] = useState('password');
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [codeFails, setCodeFails] = useState(0);
+  const codeRef = useRef(null);
 
   useEffect(() => { (email ? pwRef : emailRef).current?.focus(); }, []); // eslint-disable-line
   useEffect(() => { document.title = `${t('Sign in')} · Bishnoi One WorkDrive`; }, [t]);
@@ -197,9 +205,47 @@ export default function LoginView() {
         emailRef.current?.focus();
         return;
       }
-      api.signIn({ remember });
-      navigate(next, { replace: true });
+      checkPassword(state, password).then((ok) => {
+        if (!ok) {
+          setBusy(false);
+          setErrors({ password: t('Wrong password. Try again.') });
+          api.logEvent('Sign-in failed', account.email, 'Wrong password');
+          pwRef.current?.focus();
+          return;
+        }
+        if (twoFactorOn(state)) {
+          setBusy(false); setStep('code'); setCode(''); setCodeError('');
+          setTimeout(() => codeRef.current?.focus(), 0);
+          return;
+        }
+        finishSignIn();
+      });
     }, 650);
+  };
+
+  /** Signed in. If the organization requires 2FA and it isn't set up yet, go straight to setting it up. */
+  const finishSignIn = () => {
+    const mustSetUp = twoFactorMissing(state);
+    api.signIn({ remember });
+    navigate(mustSetUp ? '/settings/security?setup=2fa' : next, { replace: true });
+  };
+
+  const submitCode = async (ev) => {
+    ev.preventDefault();
+    if (busy) return;
+    if (codeFails >= 5) { setCodeError(t('Too many wrong codes. Wait 30 seconds and try again.')); return; }
+    if (!/^\d{6}$/.test(code)) { setCodeError(t('Enter the 6-digit code')); codeRef.current?.focus(); return; }
+    setBusy(true);
+    const ok = await verifyTotp(securityOf(state).totpSecret, code);
+    setBusy(false);
+    if (ok) { finishSignIn(); return; }
+    const fails = codeFails + 1;
+    setCodeFails(fails);
+    if (fails >= 5) setTimeout(() => setCodeFails(0), 30_000);
+    setCode('');
+    setCodeError(t('That code isn’t right. Check your authenticator app and try again.'));
+    api.logEvent('Sign-in failed', email.trim(), 'Wrong two-factor code');
+    codeRef.current?.focus();
   };
 
   const fillDemo = () => {
@@ -235,6 +281,21 @@ export default function LoginView() {
           <div className="login-mobile-brand"><img src="/logo.png" alt="" /><span>Bishnoi One <strong>WorkDrive</strong></span></div>
           <h1>{t('Sign in to WorkDrive')}</h1>
 
+          {step === 'code' ? (
+            <form onSubmit={submitCode} noValidate className="login-code-step">
+              <p className="login-code-help">{t('Open your authenticator app and enter the 6-digit code for WorkDrive.')}</p>
+              <div className="login-field">
+                <input ref={codeRef} className="login-input login-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                  placeholder="123456" aria-label={t('Authentication code')} value={code} aria-invalid={!!codeError} aria-describedby={codeError ? 'code-err' : undefined}
+                  onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setCodeError(''); }} />
+                {codeError && <span id="code-err" className="login-err">{codeError}</span>}
+              </div>
+              <button type="submit" className="login-submit" disabled={busy}>
+                {busy ? <><Loader2 size={16} className="spin" /> {t('Checking…')}</> : t('Verify')}
+              </button>
+              <p className="login-alt"><button type="button" className="login-link" onClick={() => { setStep('password'); setPassword(''); setTimeout(() => pwRef.current?.focus(), 0); }}>{t('Back to sign in')}</button></p>
+            </form>
+          ) : (<>
           <div className="login-tabs" role="tablist" aria-label={t('Sign-in method')}>
             {[['email', t('Email')], ['phone', t('Phone')]].map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => switchTab(k)}>
@@ -300,12 +361,15 @@ export default function LoginView() {
               </div>
             )}
 
-            <p className="login-terms">
-              {withNodes(t('By signing in you agree to the {agreement} and {privacy}'), {
-                agreement: <span className="login-u">{t('User Agreement')}</span>,
-                privacy: <span className="login-u">{t('Privacy Policy')}</span>,
-              })}
-            </p>
+            {/* Links set by the admin (Admin Console → Organization); without them the line is left out. */}
+            {state.org.termsUrl && state.org.privacyUrl && (
+              <p className="login-terms">
+                {withNodes(t('By signing in you agree to the {agreement} and {privacy}'), {
+                  agreement: <a className="login-u" href={state.org.termsUrl} target="_blank" rel="noreferrer">{t('User Agreement')}</a>,
+                  privacy: <a className="login-u" href={state.org.privacyUrl} target="_blank" rel="noreferrer">{t('Privacy Policy')}</a>,
+                })}
+              </p>
+            )}
 
             <button type="submit" className="login-submit" disabled={busy}>
               {busy ? <><Loader2 size={16} className="spin" /> {t('Signing in…')}</> : t('Sign In')}
@@ -321,6 +385,7 @@ export default function LoginView() {
             <button type="button" onClick={() => sso('Apple')} aria-label={t('Sign in with {name}', { name: 'Apple' })}><AppleMark /></button>
             <button type="button" onClick={() => sso('Google')} aria-label={t('Sign in with {name}', { name: 'Google' })}><GoogleMark /></button>
           </div>
+          </>)}
         </div>
       </main>
     </div>

@@ -5,7 +5,7 @@ import { useUI } from '../store/UIContext';
 import { canModify, formatFieldValue } from '../store/selectors';
 import { getFileType } from '../utils/fileTypes';
 import { getEntry, indexStatus, useSearchIndex } from './searchIndex';
-import { indexKey } from './Indexer';
+import { indexKey, sameKey } from './Indexer';
 import { suggestFor } from './suggest';
 import { LabelChip } from '../components/dialogs/OrganizeDialogs';
 
@@ -20,7 +20,7 @@ export default function TextPanel({ item }) {
   if (item.type !== 'file' || item.trashed) return null;
   const ocrOn = state.org.policies.ocr !== false;
   const entry = getEntry(item.id);
-  const fresh = entry && entry.key === indexKey(item, ocrOn);
+  const fresh = entry && sameKey(entry.key, indexKey(item, ocrOn));
   const working = !fresh && (indexStatus().current === item.id || indexStatus().pending > 0);
   const cat = getFileType(item.ext).category;
   const text = fresh ? entry.text : '';

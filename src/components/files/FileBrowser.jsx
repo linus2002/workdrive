@@ -480,7 +480,10 @@ export default function FileBrowser({
           className={`browser-body ${drop.over ? 'drop-over' : ''} ${virtual ? 'virtualized' : ''}`}
           ref={rootRef}
           tabIndex={0}
+          role="group"
           aria-label="Files. Use arrow keys to move, Enter to open, Shift+F10 for actions."
+          // Screen readers announce the item the arrow keys moved to (focus stays on this container).
+          aria-activedescendant={focusId && processed.some((i) => i.id === focusId) ? `fi-${focusId}` : undefined}
           onFocus={(e) => { if (e.target === e.currentTarget && !focusId && processed[0]) setFocusId(processed[0].id); }}
           onClick={(e) => { if (e.target === e.currentTarget || e.target.classList.contains('file-grid') || e.target.classList.contains('grid-section')) setSelected(new Set()); }}
           onContextMenu={onBackgroundContext}
@@ -512,7 +515,7 @@ export default function FileBrowser({
               {folders.length > 0 && (
                 <>
                   {foldersFirst && <div className="grid-section">{tr('Folders')}</div>}
-                  <div className="folder-grid" ref={folderWin.ref} style={folderWin.style}>
+                  <div className="folder-grid" ref={folderWin.ref} style={folderWin.style} role="grid" aria-label={tr('Folders')} aria-multiselectable="true">
                     {folders.slice(folderWin.start, folderWin.end).map((item) => <FolderTile key={item.id} item={item} selected={selected.has(item.id)} focused={focusId === item.id} onClick={onRowClick} canDropInto={canDropInto(item)} {...common} />)}
                   </div>
                 </>
@@ -520,7 +523,7 @@ export default function FileBrowser({
               {files.length > 0 && (
                 <>
                   {foldersFirst && folders.length > 0 && <div className="grid-section">{tr('Files')}</div>}
-                  <div className="file-grid" ref={fileWin.ref} style={fileWin.style}>
+                  <div className="file-grid" ref={fileWin.ref} style={fileWin.style} role="grid" aria-label={tr('Files')} aria-multiselectable="true">
                     {files.slice(fileWin.start, fileWin.end).map((item) => <FileCard key={item.id} item={item} selected={selected.has(item.id)} focused={focusId === item.id} onClick={onRowClick} {...common} />)}
                   </div>
                 </>

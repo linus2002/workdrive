@@ -1,5 +1,5 @@
-import { Suspense, useMemo, useState } from 'react';
-import { NavLink, useParams, Navigate, useNavigate } from 'react-router-dom';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { NavLink, useParams, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { User, SlidersHorizontal, Bell, Palette, Languages, Shield, HardDrive, Monitor, Moon, Sun, Smartphone, Laptop, RotateCcw, DatabaseBackup } from 'lucide-react';
 import { useDrive, useMe, currentSessionId } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
@@ -11,6 +11,10 @@ import { Avatar, Switch, ProgressBar } from '../components/common';
 import { colourName } from '../components/dialogs/OrganizeDialogs';
 import { lazyNamed } from '../utils/lazy';
 import LanguagePicker from '../i18n/LanguagePicker';
+import { checkPassword, passwordPatch, twoFactorOn } from '../store/account';
+import { newTotpSecret, verifyTotp, totpUri, groupSecret } from '../utils/totp';
+import { qrSvg } from '../sharing/qr';
+import { useUnsavedGuard } from '../utils/useUnsavedGuard';
 
 const BackupPanel = lazyNamed(() => import('../backup/BackupPanel'));
 
@@ -60,6 +64,7 @@ function Profile() {
   const { toast } = useUI();
   const [form, setForm] = useState({ name: me.name, title: me.title || '', dept: me.dept || '', phone: me.phone || '', email: me.email });
   const dirty = ['name', 'title', 'dept', 'phone'].some((k) => form[k] !== (me[k] || ''));
+  useUnsavedGuard(dirty, 'You have unsaved profile changes. Leave without saving?');
   const save = (e) => { e.preventDefault(); if (!form.name.trim()) return; api.updateUser(me.id, { name: form.name.trim(), title: form.title, dept: form.dept, phone: form.phone }); toast('Profile updated', { type: 'success' }); };
   const colors = ['#1686D9', '#D946EF', '#0EA5A4', '#16A34A', '#EA7A1A', '#6366F1', '#E5484D'];
   return (
@@ -121,6 +126,7 @@ function Preferences() {
 
 function Notifications() {
   const { state, api } = useDrive();
+  const { toast } = useUI();
   const n = state.settings.notifications;
   const set = (k) => (v) => api.updateSettings({ notifications: { ...n, [k]: v } });
   return (
@@ -128,9 +134,26 @@ function Notifications() {
       <Section title="Delivery" desc="Choose where you receive notifications.">
         <SettingRow title="Email notifications" desc="Get a message in your inbox."><Switch checked={n.email} onChange={set('email')} label="Email notifications" /></SettingRow>
         <SettingRow title="Desktop notifications" desc="Show browser notifications while the app is open.">
-          <Switch checked={n.desktop} onChange={async (v) => { if (v && 'Notification' in window) { try { await Notification.requestPermission(); } catch { /* noop */ } } set('desktop')(v); }} label="Desktop notifications" />
+          <Switch checked={n.desktop && typeof Notification !== 'undefined' && Notification.permission === 'granted'} onChange={async (v) => {
+            if (v) {
+              let perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+              if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch { /* noop */ } }
+              if (perm !== 'granted') {
+                toast(perm === 'unsupported' ? 'This browser doesn’t support desktop notifications' : 'Desktop notifications are blocked. Allow them in your browser’s site settings, then try again.', { type: 'warning' });
+                return;
+              }
+            }
+            set('desktop')(v);
+          }} label="Desktop notifications" />
         </SettingRow>
+        <SettingRow title="Pop-up alerts" desc="Show a short message in the corner when something new arrives."><Switch checked={n.popups !== false} onChange={set('popups')} label="Pop-up alerts" /></SettingRow>
         <SettingRow title="Weekly digest" desc="A summary of activity in your team folders every Monday."><Switch checked={n.weeklyDigest} onChange={set('weeklyDigest')} label="Weekly digest" /></SettingRow>
+      </Section>
+      <Section title="Live activity" desc="Teammates comment, share, upload and assign tasks on your workspace every minute or two, and you're notified as it happens (demo).">
+        <SettingRow title="Live teammate activity"><Switch checked={n.live !== false} onChange={set('live')} label="Live teammate activity" /></SettingRow>
+        <SettingRow title="Try it now" desc="Have a teammate do something right away.">
+          <button className="btn btn-secondary btn-sm" onClick={() => api.simulateActivity()}>Simulate activity</button>
+        </SettingRow>
       </Section>
       <Section title="Activity" desc="Pick which events notify you.">
         <SettingRow title="Someone shares a file with me"><Switch checked={n.shares} onChange={set('shares')} label="Shares" /></SettingRow>
@@ -197,57 +220,98 @@ function Security() {
   const strength = pw.next.length >= 12 && /[A-Z]/.test(pw.next) && /\d/.test(pw.next) ? 'strong' : pw.next.length >= 8 ? 'fair' : pw.next ? 'weak' : '';
   const err = pw.confirm && pw.next !== pw.confirm ? 'Passwords do not match' : null;
   const pwProblem = !pw.cur ? 'Enter your current password' : pw.next.length < 8 ? 'New password must be at least 8 characters' : pw.next !== pw.confirm ? 'Confirm the new password' : pw.next === pw.cur ? 'Choose a password different from the current one' : null;
-  const changePassword = (e) => {
+  const [pwError, setPwError] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+  const changePassword = async (e) => {
     e.preventDefault();
-    if (pwProblem) return;
-    toast('Password changed', { type: 'success' });
+    if (pwProblem || pwBusy) return;
+    setPwBusy(true);
+    const ok = await checkPassword(state, pw.cur);
+    if (!ok) { setPwBusy(false); setPwError('Your current password is wrong'); api.logEvent('Password change failed', 'Account', 'Wrong current password'); return; }
+    api.updateSettings(await passwordPatch(state, pw.next));
+    setPwBusy(false); setPwError('');
+    toast('Password changed. Use it the next time you sign in.', { type: 'success' });
     setPw({ cur: '', next: '', confirm: '' });
     api.logEvent('Password changed', 'Account');
   };
-  // Two-factor enrolment (demo): show a setup key, then require a 6-digit code before turning it on.
-  const [enrol, setEnrol] = useState(null); // null | { key, code }
-  const startEnrol = () => setEnrol({ key: Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, 'X')).join(' '), code: '' });
+  // Two-factor: a real authenticator-app secret (TOTP). It's only turned on after a correct code from the app.
+  const [params, setParams] = useSearchParams();
+  const required = !!state.org.policies.twoFactor;
+  const [enrol, setEnrol] = useState(null); // null | { secret, code, error }
+  const [disabling, setDisabling] = useState(null); // null | { code, error }
+  const startEnrol = () => setEnrol({ secret: newTotpSecret(), code: '', error: '' });
+  // Arriving from sign-in because the organization requires 2FA: start the setup straight away.
+  useEffect(() => { if (params.get('setup') === '2fa' && !twoFactorOn(state) && !enrol) startEnrol(); }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   const codeOk = /^\d{6}$/.test(enrol?.code || '');
-  const finishEnrol = (e) => {
+  const me = state.users.find((u) => u.id === state.meId);
+  const finishEnrol = async (e) => {
     e.preventDefault();
     if (!codeOk) return;
-    api.updateSettings({ security: { ...sec, twoFactor: true } });
+    if (!(await verifyTotp(enrol.secret, enrol.code))) { setEnrol({ ...enrol, code: '', error: 'That code isn’t right. Make sure your phone’s clock is correct and try the newest code.' }); return; }
+    api.updateSettings({ security: { ...sec, twoFactor: true, totpSecret: enrol.secret, twoFactorSince: Date.now() } });
     setEnrol(null);
-    toast('Two-factor authentication is on. You’ll be asked for a code at your next sign-in.', { type: 'success' });
+    if (params.get('setup')) setParams({}, { replace: true });
+    toast('Two-factor authentication is on. You’ll be asked for a code each time you sign in.', { type: 'success' });
     api.logEvent('Two-factor authentication enabled', 'Account');
+  };
+  const finishDisable = async (e) => {
+    e.preventDefault();
+    if (!(await verifyTotp(sec.totpSecret, disabling.code))) { setDisabling({ code: '', error: 'That code isn’t right' }); return; }
+    api.updateSettings({ security: { ...sec, twoFactor: false, totpSecret: null } });
+    setDisabling(null);
+    toast('Two-factor authentication turned off', { type: 'warning' });
+    api.logEvent('Two-factor authentication disabled', 'Account');
   };
   return (
     <>
       <Section title="Password" desc="Use at least 8 characters with a mix of letters and numbers.">
         <form className="form narrow" onSubmit={changePassword}>
-          <label className="field"><span className="field-label">Current password</span><input type="password" className="input" value={pw.cur} onChange={(e) => setPw({ ...pw, cur: e.target.value })} autoComplete="current-password" /></label>
+          <label className="field"><span className="field-label">Current password</span><input type="password" className="input" value={pw.cur} onChange={(e) => { setPw({ ...pw, cur: e.target.value }); setPwError(''); }} autoComplete="current-password" /></label>
           <label className="field"><span className="field-label">New password</span><input type="password" className="input" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} autoComplete="new-password" />
             {strength && <span className={`strength ${strength}`}><span /> {strength === 'strong' ? 'Strong' : strength === 'fair' ? 'Fair' : 'Too weak'}</span>}</label>
           <label className="field"><span className="field-label">Confirm new password</span><input type="password" className={`input ${err ? 'invalid' : ''}`} value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />{err && <span className="field-error">{err}</span>}</label>
           <div className="btn-row">
-            <button className="btn btn-primary" disabled={!!pwProblem} aria-describedby={pwProblem ? 'pw-hint' : undefined}>Change password</button>
+            <button className="btn btn-primary" disabled={!!pwProblem || pwBusy} aria-describedby={pwProblem ? 'pw-hint' : undefined}>Change password</button>
             {pwProblem && (pw.cur || pw.next || pw.confirm) && <span className="muted small" id="pw-hint">{pwProblem}</span>}
+            {pwError && <span className="field-error" role="alert">{pwError}</span>}
           </div>
         </form>
       </Section>
       <Section title="Sign-in security">
         <SettingRow title="Two-factor authentication" desc="Require a verification code from your authenticator app.">
-          <Switch checked={sec.twoFactor || !!enrol} onChange={(v) => {
+          <Switch checked={twoFactorOn(state) || !!enrol} disabled={required && twoFactorOn(state)} onChange={(v) => {
             if (v) { startEnrol(); return; }
             if (enrol) { setEnrol(null); return; }
-            api.updateSettings({ security: { ...sec, twoFactor: false } });
-            toast('Two-factor authentication turned off', { type: 'warning' });
+            setDisabling({ code: '', error: '' });
           }} label="Two-factor authentication" />
         </SettingRow>
+        {required && !twoFactorOn(state) && !enrol && <div className="banner warning" role="alert">Your organization requires two-factor authentication. Turn it on to keep using WorkDrive.</div>}
+        {required && twoFactorOn(state) && <p className="muted small">Required by your organization, so it can’t be turned off.</p>}
+        {disabling && (
+          <form className="twofa-enrol" onSubmit={finishDisable} aria-label="Turn off two-factor authentication">
+            <label className="field"><span className="field-label">To turn it off, enter a code from your authenticator app</span>
+              <input className="input twofa-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus value={disabling.code}
+                onChange={(e) => setDisabling({ code: e.target.value.replace(/\D/g, '').slice(0, 6), error: '' })} placeholder="123456" />
+              {disabling.error && <span className="field-error">{disabling.error}</span>}
+            </label>
+            <div className="btn-row">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDisabling(null)}>Cancel</button>
+              <button className="btn btn-danger btn-sm" disabled={disabling.code.length !== 6}>Turn off</button>
+            </div>
+          </form>
+        )}
         {enrol && (
           <form className="twofa-enrol" onSubmit={finishEnrol} aria-label="Set up two-factor authentication">
             <ol className="twofa-steps">
-              <li>Open your authenticator app and add an account using this setup key:
-                <code className="twofa-key">{enrol.key}</code></li>
+              <li>In your authenticator app (Google Authenticator, Microsoft Authenticator, …) add an account by scanning this code:
+                <img className="twofa-qr" alt="QR code for your authenticator app" src={`data:image/svg+xml;utf8,${encodeURIComponent(qrSvg(totpUri(enrol.secret, me?.email || 'account', 'WorkDrive')))}`} />
+                <span className="muted small">Can’t scan it? Enter this key instead:</span>
+                <code className="twofa-key">{groupSecret(enrol.secret)}</code></li>
               <li>
                 <label className="field"><span className="field-label">Enter the 6-digit code from the app</span>
                   <input className="input twofa-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
-                    value={enrol.code} onChange={(e) => setEnrol({ ...enrol, code: e.target.value.replace(/\D/g, '').slice(0, 6) })} placeholder="123456" />
+                    value={enrol.code} onChange={(e) => setEnrol({ ...enrol, code: e.target.value.replace(/\D/g, '').slice(0, 6), error: '' })} placeholder="123456" />
+                  {enrol.error && <span className="field-error">{enrol.error}</span>}
                 </label>
               </li>
             </ol>

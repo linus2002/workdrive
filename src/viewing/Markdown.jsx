@@ -8,7 +8,14 @@ const SAFE_IMG = /^(https?:|data:image\/(png|jpe?g|gif|webp);)/i;
 const LANG_ALIAS = { javascript: 'js', jsx: 'js', ts: 'js', typescript: 'js', tsx: 'js', python: 'py', py: 'py', bash: 'sh', shell: 'sh', sh: 'sh', zsh: 'sh', json: 'json', html: 'html', xml: 'html', css: 'css', scss: 'css', sql: 'sql', yaml: 'yaml', yml: 'yaml', toml: 'yaml', go: 'c', rust: 'c', java: 'c', c: 'c', cpp: 'c', csharp: 'c', cs: 'c', php: 'c', ruby: 'py', rb: 'py', kotlin: 'c', swift: 'c' };
 
 /* ---------------- inline ---------------- */
+// Inline formatting is matched by trying each rule at each position; on a very long paragraph (a minified or
+// generated .md with no blank lines) that gets slow enough to freeze the tab, so such text is shown as-is.
+const INLINE_MAX = 10000;
+// Characters that can start a rule (or a line break); anything else is plain text and taken in one go.
+const PLAIN_RUN = /^[^\\`![<*_~h \n]+/;
+
 function inline(text, key = 'i') {
+  if (text.length > INLINE_MAX) return [text];
   const out = [];
   let rest = text;
   let n = 0;
@@ -40,8 +47,10 @@ function inline(text, key = 'i') {
     // Hard line break: two trailing spaces or a backslash before a newline.
     const br = rest.match(/^( {2,}|\\)\n/);
     if (br) { if (buf) { push(buf); buf = ''; } push(<br />); rest = rest.slice(br[0].length); continue; }
-    buf += rest[0];
-    rest = rest.slice(1);
+    const run = rest.match(PLAIN_RUN);
+    const take = run ? run[0].length : 1;
+    buf += rest.slice(0, take);
+    rest = rest.slice(take);
   }
   if (buf) push(buf);
   return out;

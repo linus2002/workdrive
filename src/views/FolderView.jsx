@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { FolderOpen, FolderPlus, Upload, Share2, UserPlus, MoreHorizontal, PenLine, Activity, Trash2, FileText, Sheet, FolderX, Settings2, Eye, Lock, History } from 'lucide-react';
 import { useDrive } from '../store/DriveStore';
+import { useT } from '../i18n';
 import { useUI } from '../store/UIContext';
 import { useItemActions } from '../store/useItemActions';
 import { accessOf, ancestors, canEdit, canManage, childrenOf, folderRoute, isTrashedDeep, teamUsage, teamRoleOf } from '../store/selectors';
@@ -11,6 +12,7 @@ import PageHeader from '../components/layout/PageHeader';
 import { AvatarStack, EmptyState, FolderGlyph, usePopover, MenuList, ProgressBar } from '../components/common';
 
 export default function FolderView({ mode }) {
+  const t = useT();
   const { folderId, teamId } = useParams();
   const { state, api } = useDrive();
   const ui = useUI();
@@ -63,8 +65,8 @@ export default function FolderView({ mode }) {
     return (
       <div className="page">
         {missing
-          ? <EmptyState icon={FolderX} title="Folder not found" text="It may have been moved or deleted." action={<Link className="btn btn-primary" to="/folders">Go to My Folders</Link>} />
-          : <EmptyState icon={Lock} title="You don't have access" text={team && !folder ? (membershipExpired ? `Your access to "${team.name}" has expired. Ask a team admin to extend it.` : `You're not a member of "${team.name}". Ask a team admin to add you.`) : 'Ask the owner to share this folder with you.'} action={<Link className="btn btn-primary" to="/folders">Go to My Folders</Link>} />}
+          ? <EmptyState icon={FolderX} title={t('Folder not found')} text={t('It may have been moved or deleted.')} action={<Link className="btn btn-primary" to="/folders">{t('Go to My Folders')}</Link>} />
+          : <EmptyState icon={Lock} title={t("You don't have access")} text={team && !folder ? (membershipExpired ? `Your access to "${team.name}" has expired. Ask a team admin to extend it.` : `You're not a member of "${team.name}". Ask a team admin to add you.`) : 'Ask the owner to share this folder with you.'} action={<Link className="btn btn-primary" to="/folders">Go to My Folders</Link>} />}
       </div>
     );
   }
@@ -73,11 +75,11 @@ export default function FolderView({ mode }) {
   const fullChain = folder ? [...ancestors(state.items, folder.id), folder] : [];
   const firstVisible = fullChain.findIndex((f) => accessOf(state, f) !== 'none');
   const chain = firstVisible < 0 ? [] : fullChain.slice(firstVisible);
-  const rootCrumb = space === 'my' ? { label: 'My Folders', to: '/folders', folderId: null, space: 'my', droppable: true }
-    : space === 'user' ? { label: 'Shared with Me', to: '/shared-with-me' }
+  const rootCrumb = space === 'my' ? { label: t('My Folders'), to: '/folders', folderId: null, space: 'my', droppable: true }
+    : space === 'user' ? { label: t('Shared with Me'), to: '/shared-with-me' }
       : { label: team?.name || state.teams.find((t) => t.id === space)?.name, to: `/team-folders/${space}`, folderId: null, space, droppable: writable };
   const crumbs = [
-    ...(space.startsWith('t') ? [{ label: 'Team Folders', to: '/team-folders' }] : []),
+    ...(space.startsWith('t') ? [{ label: t('Team Folders'), to: '/team-folders' }] : []),
     rootCrumb,
     ...chain.map((f) => ({ label: f.name, to: space.startsWith('t') ? `/team-folders/${space}/${f.id}` : `/folders/${f.id}`, folderId: f.id, space, droppable: canEdit(accessOf(state, f)) })),
   ];

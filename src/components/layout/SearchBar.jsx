@@ -20,29 +20,38 @@ const QUICK = [
   { type: 'video', label: 'Videos', icon: Video },
 ];
 
-export function searchItems(state, q) {
+/**
+ * Items matching `q`, best first. Matching is cheap and runs on everything; the costlier checks (in the trash?
+ * can you see it?) run only on matches, in ranked order, and stop once `limit` results are found.
+ */
+export function searchItems(state, q, limit = Infinity) {
   const query = q.trim().toLowerCase();
   if (!query) return [];
   const users = Object.fromEntries(state.users.map((u) => [u.id, u]));
-  return Object.values(state.items)
-    .filter((i) => !isTrashedDeep(state.items, i.id))
-    .filter((i) => canSee(state, i))
-    .map((i) => {
-      const name = i.name.toLowerCase();
-      let score = 0;
-      if (name === query) score = 100;
-      else if (name.startsWith(query)) score = 60;
-      else if (name.includes(query)) score = 40;
-      else if (i.ext === query.replace('.', '')) score = 25;
-      else if (itemCategory(i).startsWith(query)) score = 20;
-      else if (users[i.ownerId]?.name.toLowerCase().includes(query)) score = 15;
-      else if (organizeText(state, i).includes(query)) score = 12; // labels + custom field values
-      else if (contentMatches(i.id, query) || (i.content || '').toLowerCase().includes(query)) score = 10; // text inside the file (incl. OCR)
-      return { i, score: score ? score + (i.lastOpened ? 5 : 0) : 0 };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || b.i.modifiedAt - a.i.modifiedAt)
-    .map((x) => x.i);
+  const ext = query.replace('.', '');
+  const scored = [];
+  for (const i of Object.values(state.items)) {
+    if (i.trashed) continue;
+    const name = i.name.toLowerCase();
+    let score = 0;
+    if (name === query) score = 100;
+    else if (name.startsWith(query)) score = 60;
+    else if (name.includes(query)) score = 40;
+    else if (i.ext === ext) score = 25;
+    else if (itemCategory(i).startsWith(query)) score = 20;
+    else if (users[i.ownerId]?.name.toLowerCase().includes(query)) score = 15;
+    else if (organizeText(state, i).includes(query)) score = 12; // labels + custom field values
+    else if (contentMatches(i.id, query) || (i.content || '').toLowerCase().includes(query)) score = 10; // text inside the file (incl. OCR)
+    if (score) scored.push({ i, score: score + (i.lastOpened ? 5 : 0) });
+  }
+  scored.sort((a, b) => b.score - a.score || b.i.modifiedAt - a.i.modifiedAt);
+  const out = [];
+  for (const { i } of scored) {
+    if (isTrashedDeep(state.items, i.id) || !canSee(state, i)) continue;
+    out.push(i);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export default function SearchBar() {
@@ -80,7 +89,10 @@ export default function SearchBar() {
   }, []);
 
   const indexVersion = useSearchIndex(); // re-run when newly indexed text arrives
-  const results = useMemo(() => searchItems(state, q).slice(0, 7), [state, q, indexVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Search once typing pauses (not on every keystroke), and only while the suggestions are showing.
+  const [dq, setDq] = useState(q);
+  useEffect(() => { const id = setTimeout(() => setDq(q), q ? 120 : 0); return () => clearTimeout(id); }, [q]);
+  const results = useMemo(() => (pop.open && dq.trim() ? searchItems(state, dq, 7) : []), [pop.open && state, dq, indexVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = (value = q, type) => {
     const v = value.trim();

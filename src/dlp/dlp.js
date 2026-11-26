@@ -1,6 +1,6 @@
 // Data loss prevention: find sensitive data in a file's indexed text and decide whether a share may go ahead.
 // Detection is pattern-based with validation (Luhn, IBAN checksum, format rules) to keep false positives down.
-import { getEntry } from '../search/searchIndex';
+import { getEntry, indexedCurrent } from '../search/searchIndex';
 import { descendantIds, effectiveShares, ancestors } from '../store/selectors';
 
 const digits = (s) => s.replace(/\D/g, '');
@@ -137,8 +137,12 @@ export function scanPending(state, item) {
   const p = state.org.policies.dlp;
   if (!item || !p?.enabled || p.action !== 'block' || !p.publicLinks) return false;
   const ids = item.type === 'folder' ? descendantIds(state.items, item.id) : [item.id];
-  return ids.map((id) => state.items[id]).some((f) => f && f.type === 'file' && !f.trashed
-    && !getEntry(f.id)?.key?.startsWith(`${f.version || 1}|${f.size}|${f.modifiedAt}|`));
+  // A scan that failed (e.g. offline, so OCR couldn't load) found nothing, but that doesn't make the file clean.
+  return ids.map((id) => state.items[id]).some((f) => {
+    if (!f || f.type !== 'file' || f.trashed) return false;
+    const e = getEntry(f.id);
+    return !indexedCurrent(e, f) || e.source === 'error';
+  });
 }
 
 /** Like checkShare, for everything in a team folder (adding a member gives access to all of it). */

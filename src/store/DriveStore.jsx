@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { USERS, TEAMS, PRIORITY_TEAMS, ITEMS, NOTIFICATIONS, AUDIT, ORG, ME, FILE_REQUESTS, normalizeLink, TASKS, APPROVALS, PRODUCTIVITY_NOTIFICATIONS, LEGAL_HOLDS, SESSIONS, SIGN_REQUESTS, SIGN_ITEM_NAMES, SIGN_NOTIFICATIONS, GUEST_USERS, GUEST_SHARES, GUEST_MEMBERS, guestShareEntry, guestMemberEntry, BRANDING, SAMPLE_LINK_SECRET_HASH } from '../data/mockData';
 import { computeStatus, SIGNER_COLORS } from '../signatures/status';
 import { uid } from '../utils/format';
+import { simulateEvent, wantsNotification } from '../notifications/simulate';
+import { clearThumbs } from '../data/storage/thumbStore';
 import { descendantIds, childIds, lockedInside, isTrashedDeep, uniqueName, ancestors, lockedByOther, canForceUnlock, canManage, holdOn, blocksPermanentDelete, accessOf, canEdit, teamRoleOf, quotaError, activeHolds, canDownload } from './selectors';
 import { deviceLabel, sessionIp } from '../utils/sharing';
 import { DEFAULT_OFFBOARD } from '../offboard/offboard';
@@ -25,6 +27,7 @@ const newSession = (userId) => ({ id: uid('ss'), userId, device: deviceLabel(), 
 import { stateStore, fileStore, requestPersistence, hashSecret } from '../data/storage';
 
 const SESSION_KEY = 'workvault-drive:session';
+const NOTIF_MAX = 200;
 
 export const DEFAULT_SETTINGS = {
   theme: 'system', // light | dark | system
@@ -35,7 +38,7 @@ export const DEFAULT_SETTINGS = {
   sidebarCollapsed: false,
   showDetailsPanel: false,
   confirmDelete: true,
-  notifications: { email: true, desktop: false, shares: true, comments: true, uploads: true, teamChanges: true, weeklyDigest: false },
+  notifications: { email: true, desktop: false, shares: true, comments: true, uploads: true, teamChanges: true, weeklyDigest: false, live: true, popups: true },
   security: { twoFactor: true, loginAlerts: true },
   pinned: [], // item ids pinned to the sidebar
   activitySeenAt: 0, // last time the Activity page was opened ("new since your last visit")
@@ -70,9 +73,43 @@ function seedState() {
 }
 
 /** The newest state format this build understands (seedVersion after all migrations). */
-export const SEED_VERSION = 13;
+export const SEED_VERSION = 14;
 
-/** Turn a saved state object (any seedVersion 1..13) into current state; seed data when missing or unusable. */
+const THUMB_FIELDS = ['pdfThumb', 'pdfThumbOf', 'videoThumb', 'videoThumbOf', 'videoThumbV', 'videoDuration'];
+function dropSavedThumbs(items) {
+  let out = items;
+  for (const [id, it] of Object.entries(items || {})) {
+    if (!THUMB_FIELDS.some((f) => f in it)) continue;
+    if (out === items) out = { ...items };
+    const copy = { ...it };
+    THUMB_FIELDS.forEach((f) => delete copy[f]);
+    out[id] = copy;
+  }
+  return out;
+}
+
+/**
+ * Uploads saved by older builds also kept their bytes inline (data: URLs, large text). Once the bytes are in
+ * the file store those copies only use up localStorage: drop them. Edited text has no stored bytes, so it stays.
+ */
+export const INLINE_TEXT_MAX = 64 * 1024;
+function dropEmbeddedCopies(s) {
+  let items = null;
+  for (const [id, it] of Object.entries(s.items)) {
+    if (!it.mime) continue; // sample files: their inline data is the only copy
+    const own = blobRegistry.has(id);
+    const dropData = own && it.dataUrl;
+    const dropText = own && typeof it.content === 'string' && it.content.length > INLINE_TEXT_MAX;
+    const versions = (it.versions || []).map((v) => (blobRegistry.has(versionKey(id, v.no)) && (v.dataUrl || v.content != null) ? { ...v, dataUrl: null, content: null } : v));
+    const versionsChanged = versions.some((v, i) => v !== it.versions[i]);
+    if (!dropData && !dropText && !versionsChanged) continue;
+    items ||= { ...s.items };
+    items[id] = { ...it, ...(dropData ? { dataUrl: null } : {}), ...(dropText ? { content: null } : {}), ...(versionsChanged ? { versions } : {}) };
+  }
+  return items ? { ...s, items } : s;
+}
+
+/** Turn a saved state object (any seedVersion 1..14) into current state; seed data when missing or unusable. */
 function hydrate(parsed) {
   try {
     if (parsed) {
@@ -227,8 +264,17 @@ function hydrate(parsed) {
           });
           merged.seedVersion = 13;
         }
+        // One-time migration: "Enforce two-factor authentication" had no effect before, and the sample data had it on.
+        // Now that it's enforced, start with it off rather than lock everyone out at their next sign-in.
+        if ((merged.seedVersion || 1) < 14) {
+          merged.org = { ...merged.org, policies: { ...merged.org.policies, twoFactor: false } };
+          merged.seedVersion = 14;
+        }
         // "Keep me signed in" off: the sign-in lasts only for this browser session.
-        if (merged.remember === false && !sessionStorage.getItem(SESSION_KEY)) merged.signedOut = true;
+        // Thumbnails used to be saved on items; they now live in their own cache (thumbStore), not in localStorage.
+        merged.items = dropSavedThumbs(merged.items);
+        // Only this tab is signed out (a new tab or window): marked so it isn't saved and doesn't sign out the others.
+        if (merged.remember === false && !merged.signedOut && !sessionStorage.getItem(SESSION_KEY)) { merged.signedOut = true; merged.tabSignedOut = true; }
         return merged;
       }
     }
@@ -438,6 +484,7 @@ export function DriveStoreProvider({ children }) {
       }
       setBlobsVersion((v) => v + 1);
       markBlobsReady();
+      setState((s) => dropEmbeddedCopies(s));
       // Another tab may have stored an upload whose state it hasn't saved yet (saves are debounced):
       // wait, then only delete bytes that neither this tab nor the latest saved state knows about.
       if (orphans.length) {
@@ -503,11 +550,12 @@ export function DriveStoreProvider({ children }) {
       done = true;
       writePending.current = false;
       // Quota exceeded: the store retries without embedded file data (slim) before giving up.
-      const r = stateStore.save(state);
+      // A tab that's signed out only for itself saves the shared sign-in as it was (signed in).
+      const r = stateStore.save(state.tabSignedOut ? { ...state, signedOut: false, tabSignedOut: undefined } : state);
       if (r.ok) lastSaved.current = state;
       if (r.slim) moveEmbeddedToFileStore(state);
       setPersistError(!r.ok ? 'Browser storage is full. Changes will not persist.'
-        : r.slim ? 'Browser storage is nearly full: older activity history was shortened to fit.' : null);
+        : r.trimmed ? 'Browser storage is nearly full: older activity history was shortened to fit.' : null);
     };
     persistNow.current = write;
     writePending.current = true;
@@ -653,6 +701,7 @@ export function DriveStoreProvider({ children }) {
         blobRegistry.forEach((v) => URL.revokeObjectURL(v.url));
         blobRegistry.clear();
         fileStore.clear().catch(() => {});
+        clearThumbs();
         setState(seedState());
         return true;
       },
@@ -812,11 +861,22 @@ export function DriveStoreProvider({ children }) {
           if (accessOf(after, after.items[id]) === 'none') return 'lostAccess';
           return null;
         };
+        let incoming = 0; // bytes this move brings into another space (My Folders and team folders have quotas)
         for (const id of ids) {
           const w = why(snap, id);
           if (w === 'gone') continue;
-          if (w) { result.skipped++; if (w in result) result[w]++; } else result.moved++;
+          if (w) { result.skipped++; if (w in result) result[w]++; continue; }
+          result.moved++;
+          const it = snap.items[id];
+          if (it.space !== targetSpace) {
+            for (const fid of [id, ...(it.type === 'folder' ? descendantIds(snap.items, id) : [])]) {
+              const f = snap.items[fid];
+              if (f?.type === 'file') incoming += f.size || 0;
+            }
+          }
         }
+        const qErr = quotaError(snap, targetSpace, incoming);
+        if (qErr) return { ...result, moved: 0, skipped: ids.length, quota: qErr };
         update((s) => {
           let movedNow = 0;
           const patches = {};
@@ -859,9 +919,16 @@ export function DriveStoreProvider({ children }) {
         const bytes = plan.reduce((n, p) => n + (snap.items[p.srcId].type === 'file' ? snap.items[p.srcId].size || 0 : 0), 0);
         const qErr = quotaError(snap, targetSpace, bytes);
         if (qErr) { o.copyItems.lastError = qErr; return 0; }
-        for (const p of plan) {
-          if (blobRegistry.has(p.srcId)) { blobRegistry.set(p.copyId, blobRegistry.get(p.srcId)); storeBlob(p.copyId, blobRegistry.get(p.srcId).blob); }
-        }
+        const copyBytes = () => {
+          let n = 0;
+          for (const p of plan) {
+            if (blobRegistry.has(p.srcId) && !blobRegistry.has(p.copyId)) { blobRegistry.set(p.copyId, blobRegistry.get(p.srcId)); storeBlob(p.copyId, blobRegistry.get(p.srcId).blob); n++; }
+          }
+          return n;
+        };
+        copyBytes();
+        // Right after a reload the saved bytes may still be loading: copy them once they're in.
+        if (!blobsLoaded) blobsReady.then(() => { if (copyBytes()) setBlobsVersion((v) => v + 1); });
         update((s) => {
           const items = { ...s.items };
           const ns = { ...s, items };
@@ -1064,9 +1131,16 @@ export function DriveStoreProvider({ children }) {
       },
 
       setLink(id, rawLink) {
-        const link = normalizeLink(rawLink);
+        const normalized = normalizeLink(rawLink);
         update((s) => {
-          const had = s.items[id]?.link?.enabled;
+          const prev = s.items[id]?.link;
+          const had = prev?.enabled;
+          // A link that just became public gets the organization's default expiry (Admin → Policies), unless it has one.
+          const days = Number(s.org.policies.linkExpiryDays) || 0;
+          const becamePublic = normalized?.enabled && normalized.access === 'anyone' && !(prev?.enabled && prev.access === 'anyone');
+          const link = becamePublic && days && !normalized.expires
+            ? { ...normalized, expires: new Date(new Date().setHours(23, 59, 59, 0) + days * 86400000).getTime() }
+            : normalized;
           let ns = patchItems(s, { [id]: { link } });
           if (link?.enabled && !had) ns = log(ns, 'Link created', s.items[id].name, link.access === 'anyone' ? 'Anyone with the link' : 'Organization', { itemId: id });
           return ns;
@@ -1915,8 +1989,21 @@ export function DriveStoreProvider({ children }) {
       clearNotifications() {
         update((s) => ({ ...s, notifications: [] }));
       },
+      removeNotification(id) {
+        update((s) => ({ ...s, notifications: s.notifications.filter((n) => n.id !== id) }));
+      },
       pushNotification(n) {
-        update((s) => ({ ...s, notifications: [{ id: uid('n'), at: Date.now(), read: false, actorId: null, ...n }, ...s.notifications] }));
+        update((s) => (wantsNotification(s, n) ? { ...s, notifications: [{ id: uid('n'), at: Date.now(), read: false, actorId: null, ...n }, ...s.notifications].slice(0, NOTIF_MAX) } : s));
+      },
+      /** A teammate does something on the workspace (comment, share, upload, task) and you're notified. */
+      simulateActivity() {
+        update((s) => {
+          if (s.signedOut) return s;
+          const r = simulateEvent(s);
+          if (!r) return s;
+          const n = { id: uid('n'), at: Date.now(), read: false, actorId: null, ...r.notification };
+          return wantsNotification(r.state, n) ? { ...r.state, notifications: [n, ...r.state.notifications].slice(0, NOTIF_MAX) } : r.state;
+        });
       },
 
       // ---- Settings / misc ----
@@ -1944,7 +2031,7 @@ export function DriveStoreProvider({ children }) {
         try { sessionStorage.setItem(SESSION_KEY, '1'); sessionStorage.removeItem(SIGNOUT_REASON_KEY); } catch { /* storage unavailable */ }
         const ss = newSession(get().meId); // decided outside the reducer (it may run twice in development)
         rememberSessionId(ss.id, remember);
-        update((s) => log({ ...s, signedOut: false, remember, sessions: [ss, ...(s.sessions || [])] }, 'Signed in', s.users.find((u) => u.id === s.meId)?.email, `${ss.device} · ${remember ? 'Kept signed in' : 'This session only'}`));
+        update((s) => log({ ...s, signedOut: false, tabSignedOut: undefined, remember, sessions: [ss, ...(s.sessions || [])] }, 'Signed in', s.users.find((u) => u.id === s.meId)?.email, `${ss.device} · ${remember ? 'Kept signed in' : 'This session only'}`));
       },
       /** reason: '' (user clicked Sign out) | 'idle' | 'revoked' — shown on the sign-in page. */
       signOut(reason = '') {

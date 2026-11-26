@@ -112,7 +112,16 @@ export function activityPhrase(action) {
 }
 
 /** Events by other people since the Activity page was last opened. */
-export const newActivityCount = (state) => activityEntries(state).filter((e) => e.actorId !== state.meId && e.at > (state.settings.activitySeenAt || 0)).length;
+// The sidebar badge asks on every render: recount only when items, the audit log or "seen at" change.
+let activityMemo = { items: null, audit: null, seen: null, me: null, n: 0 };
+export const newActivityCount = (state) => {
+  const seen = state.settings.activitySeenAt || 0;
+  const m = activityMemo;
+  if (m.items === state.items && m.audit === state.audit && m.seen === seen && m.me === state.meId) return m.n;
+  const n = activityEntries(state).filter((e) => e.actorId !== state.meId && e.at > seen).length;
+  activityMemo = { items: state.items, audit: state.audit, seen, me: state.meId, n };
+  return n;
+};
 
 /** Counts for sidebar badges. */
 export function productivityCounts(state) {

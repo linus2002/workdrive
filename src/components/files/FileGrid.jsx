@@ -1,6 +1,6 @@
 import { memo, useRef } from 'react';
-import { MoreVertical, Star, Users, Link2, Play, Lock, MessageSquare, CornerUpRight } from 'lucide-react';
-import { FileIcon, FileGlyph, Highlight, thumbUrl, FolderGlyph } from '../common';
+import { MoreVertical, Star, Users, Link2, Lock, MessageSquare, CornerUpRight } from 'lucide-react';
+import { FileIcon, Highlight, thumbUrl, FolderGlyph } from '../common';
 import { formatDate, formatSize } from '../../utils/format';
 import { getFileType } from '../../utils/fileTypes';
 import { itemCount, openCommentCount, labelsOf, shortcutTarget } from '../../store/selectors';
@@ -8,6 +8,9 @@ import { useDropTarget, dragSourceProps } from './dnd';
 import Snippet from '../../search/Snippet';
 import { Checkbox } from './FileList';
 import { usePdfThumb } from './usePdfThumb';
+import CardPreview from './CardPreview';
+import { useImageThumb } from './useImageThumb';
+import { blobRegistry } from '../../store/DriveStore';
 
 const coarse = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
@@ -47,31 +50,12 @@ function useTapBehaviour(item, { selectionMode, onClick, onOpen, toggleSelect })
 }
 
 function CardThumb({ item }) {
-  const url = thumbUrl(item);
+  const url = useImageThumb(item, thumbUrl(item));
   const pdfThumb = usePdfThumb(item);
-  const t = getFileType(item.ext);
   if (url) return <img src={url} alt="" className="card-img" draggable={false} loading="lazy" />;
-  if (pdfThumb) {
-    return (
-      <div className="card-pdf" style={{ '--tc': t.color }}>
-        <img src={pdfThumb} alt={`First page of ${item.name}`} draggable={false} />
-      </div>
-    );
-  }
-  return (
-    <div className="card-icon-thumb" style={{ '--tc': t.color }}>
-      {t.category === 'video' && <span className="play-badge"><Play size={18} fill="currentColor" /></span>}
-      {t.category === 'document' || t.category === 'pdf' || t.category === 'text' ? (
-        <div className="mini-page">
-          <span className="ln w80" /><span className="ln" /><span className="ln w90" /><span className="ln w60" /><span className="ln" /><span className="ln w70" />
-        </div>
-      ) : t.category === 'spreadsheet' ? (
-        <div className="mini-sheet">{Array.from({ length: 16 }).map((_, i) => <span key={i} />)}</div>
-      ) : t.category === 'presentation' ? (
-        <div className="mini-slide"><span className="ln w60" /><span className="blk" /></div>
-      ) : t.category !== 'video' ? <FileGlyph ext={item.ext} size={56} /> : null}
-    </div>
-  );
+  if (getFileType(item.ext).category === 'image' && blobRegistry.has(item.id)) return <div className="card-icon-thumb" aria-hidden="true" />; // small copy on its way
+  if (pdfThumb) return <img src={pdfThumb} alt={`First page of ${item.name}`} className="card-pdf" draggable={false} />;
+  return <CardPreview item={item} />;
 }
 
 export const FolderTile = memo(function FolderTile({ item, state, selected, focused, selectionMode, onClick, onOpen, onContext, onMore, toggleSelect, query, selectedIds, draggable, canDropInto, teamColor }) {
@@ -80,10 +64,10 @@ export const FolderTile = memo(function FolderTile({ item, state, selected, focu
   const n = itemCount(state.items, item.id);
   return (
     <div className={`folder-tile ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${drop.over ? 'drop-over' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
-      {...dragSourceProps(item, selectedIds, draggable)} {...drop.props} role="gridcell" aria-selected={selected}>
-      <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`}><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
+      {...dragSourceProps(item, selectedIds, draggable)} {...drop.props} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, folder, ${n} item${n === 1 ? '' : 's'}`}>
+      <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`} role="gridcell"><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
       {!(selected || selectionMode) && <FolderGlyph size={30} shared={item.sharedWith?.length > 0} color={item.color || teamColor} />}
-      <div className="min0 grow">
+      <div className="min0 grow" role="gridcell">
         <div className="card-name-row">
           <div className="tile-name truncate" title={item.name}><Highlight text={item.name} query={query} /></div>
           {labelsOf(state, item).length > 0 && (
@@ -94,8 +78,11 @@ export const FolderTile = memo(function FolderTile({ item, state, selected, focu
         </div>
         <div className="tile-meta">{n} item{n === 1 ? '' : 's'}</div>
       </div>
-      {item.favorite && <span className="fav-star-wrap" role="img" aria-label="Favorite" title="Favorite"><Star size={13} className="fav-star" fill="currentColor" aria-hidden="true" /></span>}
-      <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
+      {/* Star and menu button sit in their own cell (a grid row may only contain cells). */}
+      <span className="tile-actions" role="gridcell">
+        {item.favorite && <span className="fav-star-wrap" role="img" aria-label="Favorite" title="Favorite"><Star size={13} className="fav-star" fill="currentColor" aria-hidden="true" /></span>}
+        <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
+      </span>
     </div>
   );
 });
@@ -111,8 +98,8 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
     : `${t.label} · ${formatSize(item.size)} · ${context === 'trash' ? `Deleted ${formatDate(item.trashedAt)}` : formatDate(item.modifiedAt)}`;
   return (
     <div className={`file-card ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${isShortcut && !target ? 'broken' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
-      {...dragSourceProps(item, selectedIds, draggable)} role="gridcell" aria-selected={selected}>
-      <div className="card-thumb">
+      {...dragSourceProps(item, selectedIds, draggable)} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, ${meta}`}>
+      <div className="card-thumb" role="gridcell">
         {target?.type === 'folder'
           ? <div className="card-icon-thumb"><FolderGlyph size={64} color={target.color || undefined} /></div>
           : <CardThumb item={target || item} />}
@@ -126,7 +113,7 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
           {openCommentCount(item) > 0 && !item.trashed && <span className="card-badge" role="img" title={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`} aria-label={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`}><MessageSquare size={12} aria-hidden="true" />{openCommentCount(item)}</span>}
         </div>
       </div>
-      <div className="card-body">
+      <div className="card-body" role="gridcell">
         <FileIcon item={item} size={20} />
         <div className="min0 grow">
           <div className="card-name-row">

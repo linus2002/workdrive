@@ -280,7 +280,8 @@ export function PublicLinkView() {
   const isFolder = item.type === 'folder';
   const folderId = path.length ? path[path.length - 1] : item.id;
   const children = isFolder
-    ? Object.values(state.items).filter((c) => c.parentId === folderId && !c.trashed).sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'folder' ? -1 : 1))
+    // Shortcuts are left out: they can point at files outside what was shared.
+    ? Object.values(state.items).filter((c) => c.parentId === folderId && !c.trashed && c.type !== 'shortcut').sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'folder' ? -1 : 1))
     : [];
   const viewing = isFolder ? (openId ? state.items[openId] : null) : item;
   const wm = status.watermark ? `${me ? me.email : `Shared link · ${visitor.ip}`} · ${new Date().toLocaleDateString()}` : null;

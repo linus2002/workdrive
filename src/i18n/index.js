@@ -171,6 +171,15 @@ function translatorFor(code) {
 /** Translate with the currently active language (non-hook; for handlers and utilities). */
 export const t = (key, vars) => translate(active, key, vars);
 
+/**
+ * Hook for components outside the workspace store (e.g. the update banner, mounted above it): follows the
+ * language that's active, without choosing one. Inside the app, use useT.
+ */
+export function useActiveT() {
+  const code = useSyncExternalStore(subscribe, getActive, getActive);
+  return translatorFor(code);
+}
+
 /** Hook: returns a translator for the language in settings.language; re-renders when it changes or loads. */
 export function useT() {
   const { state } = useDrive();

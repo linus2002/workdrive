@@ -6,15 +6,18 @@
 const STATE_KEY = 'workvault-drive:v1';
 
 /**
- * Smaller copy of the state for when the full one doesn't fit the storage quota: embedded file data
- * (current and old versions) is also in the file store, so it can go; keep a shorter journal and audit log.
+ * Smaller copy of the state for when the full one doesn't fit the storage quota. First only data that also lives
+ * in the file store goes (embedded file data, and the text of old versions whose bytes are stored); only if that
+ * still doesn't fit (trimHistory) are the journal and audit log shortened.
  */
-function slimState(state) {
+function slimState(state, trimHistory) {
   const slimItem = (v) => {
-    const versions = (v.versions || []).map((x) => (x.dataUrl ? { ...x, dataUrl: null } : x));
-    return v.dataUrl || (v.versions || []).some((x) => x.dataUrl) ? { ...v, dataUrl: null, versions, sessionOnly: !!v.dataUrl } : v;
+    const versions = (v.versions || []).map((x) => (x.dataUrl || (x.hasBlob && x.content != null) ? { ...x, dataUrl: null, content: x.hasBlob ? null : x.content } : x));
+    const changed = v.dataUrl || versions.some((x, i) => x !== v.versions[i]);
+    return changed ? { ...v, dataUrl: null, versions, sessionOnly: !!v.dataUrl } : v;
   };
-  return { ...state, items: Object.fromEntries(Object.entries(state.items).map(([k, v]) => [k, slimItem(v)])), journal: (state.journal || []).slice(-800), audit: (state.audit || []).slice(0, 200) };
+  const slim = { ...state, items: Object.fromEntries(Object.entries(state.items).map(([k, v]) => [k, slimItem(v)])) };
+  return trimHistory ? { ...slim, journal: (state.journal || []).slice(-800), audit: (state.audit || []).slice(0, 200) } : slim;
 }
 
 const parse = (raw) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
@@ -37,10 +40,15 @@ export const stateStore = {
       return { ok: true };
     } catch {
       try {
-        localStorage.setItem(STATE_KEY, JSON.stringify(slimState(state)));
+        localStorage.setItem(STATE_KEY, JSON.stringify(slimState(state, false)));
         return { ok: true, slim: true };
-      } catch (e) {
-        return { ok: false, error: e };
+      } catch {
+        try {
+          localStorage.setItem(STATE_KEY, JSON.stringify(slimState(state, true)));
+          return { ok: true, slim: true, trimmed: true };
+        } catch (e) {
+          return { ok: false, error: e };
+        }
       }
     }
   },

@@ -2,6 +2,21 @@
 
 export const itemList = (state) => Object.values(state.items);
 
+/**
+ * Cache a whole-workspace scan until the items change (each change makes a new items object). The sidebar and
+ * top bar ask for these on every render; with thousands of files, scanning each time made every click slow.
+ */
+const perItems = (fn) => {
+  const cache = new WeakMap(); // items -> Map(key -> value)
+  return (state, ...args) => {
+    let m = cache.get(state.items);
+    if (!m) { m = new Map(); cache.set(state.items, m); }
+    const key = `${state.meId}|${args.join('|')}`;
+    if (!m.has(key)) m.set(key, fn(state, ...args));
+    return m.get(key);
+  };
+};
+
 /** Is the item (or any ancestor) in the trash? */
 export function isTrashedDeep(items, id) {
   let cur = items[id];
@@ -84,7 +99,9 @@ export function folderSize(items, id) {
 }
 
 export function itemCount(items, id) {
-  return Object.values(items).filter((i) => i.parentId === id && !i.trashed).length;
+  let n = 0;
+  for (const c of childIds(items, id)) if (!items[c].trashed) n++;
+  return n;
 }
 
 /** Route path for opening a folder. */
@@ -102,9 +119,7 @@ export function parentRoute(state, item) {
 }
 
 /** Items in Trash that the current user should see (matches the Trash page). */
-export function trashedForMe(state) {
-  return Object.values(state.items).filter((i) => i.trashed && (i.space === 'my' || i.trashedBy === state.meId));
-}
+export const trashedForMe = perItems((state) => Object.values(state.items).filter((i) => i.trashed && (i.space === 'my' || i.trashedBy === state.meId)));
 
 /** Can the current user see this item at all? */
 export const canSee = (state, item) => accessOf(state, item) !== 'none';
@@ -284,13 +299,14 @@ export function peopleWithAccess(state, item) {
   return state.users.filter((u) => ids.has(u.id));
 }
 
-export function teamUsage(state, teamId) {
-  return itemList(state).filter((i) => i.space === teamId && i.type === 'file').reduce((s, i) => s + i.size, 0);
-}
-
-export function myUsage(state) {
-  return itemList(state).filter((i) => i.space === 'my' && i.type === 'file').reduce((s, i) => s + i.size, 0);
-}
+/** Bytes per space (My Folders, each team folder), from one pass over the items. */
+const usageBySpace = perItems((state) => {
+  const m = new Map();
+  for (const i of Object.values(state.items)) if (i.type === 'file') m.set(i.space, (m.get(i.space) || 0) + (i.size || 0));
+  return m;
+});
+export const teamUsage = (state, teamId) => usageBySpace(state).get(teamId) || 0;
+export const myUsage = (state) => usageBySpace(state).get('my') || 0;
 
 /**
  * Would adding `bytes` to `space` go over its quota? Returns an error message, or null when it fits.

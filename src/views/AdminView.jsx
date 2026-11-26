@@ -8,6 +8,8 @@ import { RetentionTab, SessionsTab, SearchTab } from './AdminSecurity';
 import StorageAnalytics from './StorageAnalytics';
 import DataProtectionTab from '../dlp/DataProtectionTab';
 import { useDrive, useMe } from '../store/DriveStore';
+import { twoFactorOn } from '../store/account';
+import { toCsv } from '../utils/csv';
 import { useUI } from '../store/UIContext';
 import { teamUsage, itemList } from '../store/selectors';
 import { formatSize, formatDate, formatDateTime } from '../utils/format';
@@ -38,26 +40,29 @@ function UserDialog({ user, onClose }) {
   const { toast } = useUI();
   const [f, setF] = useState(user ? { ...user } : { name: '', email: '', role: 'Member', title: '', dept: '' });
   const emailTaken = state.users.some((u) => u.email.toLowerCase() === f.email.trim().toLowerCase() && u.id !== user?.id);
-  const err = !f.name.trim() ? 'Name is required' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email) ? 'Enter a valid email' : emailTaken ? 'A user with this email already exists' : null;
+  // Your own role can't be changed here (no locking yourself out), and the last active admin can't be demoted.
+  const isSelf = user?.id === state.meId;
+  const lastAdmin = user?.role === 'Admin' && f.role !== 'Admin' && state.users.filter((x) => x.role === 'Admin' && x.status !== 'disabled').length <= 1;
+  const err = !f.name.trim() ? 'Name is required' : lastAdmin ? 'This is the last active admin. Make someone else an admin first.' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email) ? 'Enter a valid email' : emailTaken ? 'A user with this email already exists' : null;
   const submit = (e) => {
     e.preventDefault();
     if (err) return;
-    if (user) { api.updateUser(user.id, { name: f.name.trim(), email: f.email.trim(), role: f.role, title: f.title, dept: f.dept }); toast('User updated', { type: 'success' }); }
-    else { api.addUser({ name: f.name.trim(), email: f.email.trim(), role: f.role, title: f.title, dept: f.dept }); toast(`Invitation sent to ${f.email.trim()}`, { type: 'success' }); }
+    if (user) { api.updateUser(user.id, { name: f.name.trim(), email: f.email.trim(), role: isSelf ? user.role : f.role, title: f.title, dept: f.dept }); toast('User updated', { type: 'success' }); }
+    else { api.addUser({ name: f.name.trim(), email: f.email.trim(), role: f.role, title: f.title, dept: f.dept }); toast(`${f.name.trim()} added. Use ⋮ → Copy invitation on their row to send them the sign-in details.`, { type: 'success', duration: 7000 }); }
     onClose();
   };
   return (
     <Modal title={user ? 'Edit user' : 'Invite user'} onClose={onClose} width={480} icon={user ? <PenLine size={20} /> : <UserPlus size={20} />}
-      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" type="submit" form="user-form" disabled={!!err}>{user ? 'Save' : 'Send invite'}</button></>}>
+      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" type="submit" form="user-form" disabled={!!err}>{user ? 'Save' : 'Add user'}</button></>}>
       <form id="user-form" className="form" onSubmit={submit}>
         <label className="field"><span className="field-label">Full name</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
         <label className="field"><span className="field-label">Email</span><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder={`name@${state.org.domain}`} /></label>
         <div className="form-grid">
-          <label className="field"><span className="field-label">Role</span><select className="select full" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option>Admin</option><option>Member</option><option>Guest</option></select></label>
+          <label className="field"><span className="field-label">Role</span><select className="select full" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} disabled={isSelf} title={isSelf ? 'You can’t change your own role' : undefined}><option>Admin</option><option>Member</option><option>Guest</option></select></label>
           <label className="field"><span className="field-label">Department</span><input className="input" value={f.dept} onChange={(e) => setF({ ...f, dept: e.target.value })} /></label>
         </div>
         <label className="field"><span className="field-label">Job title</span><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-        {err && f.email && <span className="field-error">{err}</span>}
+        {err && (f.email || lastAdmin) && <span className="field-error">{err}</span>}
       </form>
     </Modal>
   );
@@ -81,13 +86,26 @@ function UsersTab() {
       ? { title: `Make ${u.name} an admin?`, message: `${u.name} will be able to manage users, policies, security and all data in the organization.`, confirmLabel: 'Make admin', onConfirm: apply }
       : { title: `Remove admin rights from ${u.name}?`, message: `${u.name} will become a ${role} and lose access to the Admin Console.${admins <= 1 ? ' This is the last active admin.' : ''}`, confirmLabel: 'Change role', danger: true, onConfirm: apply });
   };
+  // There's no mail server yet, so the admin sends the invitation themselves: copy a ready-to-paste message.
+  const copyInvite = (u) => {
+    const text = `Hi ${u.name.split(' ')[0]},
+
+You've been invited to ${state.org.name} WorkDrive.
+Sign in at ${window.location.origin}/login with ${u.email}.
+
+If you have any trouble, reply to this message.`;
+    navigator.clipboard?.writeText(text).then(
+      () => { ui.toast(`Invitation for ${u.email} copied. Paste it into an email or chat to send it.`, { type: 'success', duration: 6000 }); api.logEvent('Invitation copied', u.email); },
+      () => ui.toast('Couldn’t copy. Your browser blocked clipboard access.', { type: 'error' }),
+    );
+  };
   const menu = (e, u) => {
     const r = e.currentTarget.getBoundingClientRect();
     const self = u.id === state.meId;
     const selfHint = self ? 'You can’t change your own account' : undefined;
     ui.showMenu({ x: r.right - 200, y: r.bottom + 4 }, [
       { label: 'Edit user', icon: PenLine, onClick: () => setEdit(u) },
-      u.status === 'invited' && { label: 'Resend invite', icon: Mail, onClick: () => ui.toast(`Invitation re-sent to ${u.email}`, { type: 'success' }) },
+      u.status === 'invited' && { label: 'Copy invitation', icon: Mail, onClick: () => copyInvite(u) },
       u.status === 'disabled'
         ? { label: 'Reactivate', icon: CheckCircle2, onClick: () => { api.updateUser(u.id, { status: 'active' }); ui.toast(`${u.name} reactivated`, { type: 'success' }); } }
         : { label: 'Deactivate', icon: Ban, disabled: self, hint: selfHint, onClick: () => ui.openDialog('confirm', {
@@ -215,19 +233,54 @@ function StorageTab() {
   );
 }
 
+const DATA_CENTERS = [['sg', 'Singapore (Asia Pacific)'], ['us', 'United States'], ['eu', 'Europe'], ['in', 'India'], ['au', 'Australia']];
+const DOMAIN_RE = /^(?=.{3,253}$)([a-z0-9-]+\.)+[a-z]{2,}$/i;
+const isUrl = (v) => { try { return ['http:', 'https:'].includes(new URL(v).protocol); } catch { return false; } };
+
 function OrgTab() {
   const { state, api } = useDrive();
-  const { toast } = useUI();
-  const [f, setF] = useState({ name: state.org.name, domain: state.org.domain });
+  const { toast, openDialog } = useUI();
+  const o = state.org;
+  const initial = { name: o.name, domain: o.domain, dataCenter: o.dataCenter || 'us', supportEmail: o.supportEmail || '', termsUrl: o.termsUrl || '', privacyUrl: o.privacyUrl || '' };
+  const [f, setF] = useState(initial);
+  const field = (k) => ({ value: f[k], onChange: (e) => setF({ ...f, [k]: e.target.value }) });
+  const errors = {
+    name: !f.name.trim() && 'Enter the organization name',
+    domain: !DOMAIN_RE.test(f.domain.trim()) && 'Enter a domain like company.com',
+    supportEmail: f.supportEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.supportEmail.trim()) && 'Enter a valid email address',
+    termsUrl: f.termsUrl.trim() && !isUrl(f.termsUrl.trim()) && 'Enter a full link starting with https://',
+    privacyUrl: f.privacyUrl.trim() && !isUrl(f.privacyUrl.trim()) && 'Enter a full link starting with https://',
+  };
+  const invalid = Object.values(errors).some(Boolean);
+  const dirty = Object.keys(initial).some((k) => f[k] !== initial[k]);
+  const save = () => {
+    api.updateOrg({ name: f.name.trim(), domain: f.domain.trim().toLowerCase(), dataCenter: f.dataCenter, supportEmail: f.supportEmail.trim(), termsUrl: f.termsUrl.trim(), privacyUrl: f.privacyUrl.trim() });
+    toast('Organization updated', { type: 'success' });
+  };
+  const submit = (e) => {
+    e.preventDefault();
+    if (invalid || !dirty) return;
+    // Changing the domain changes who counts as a colleague and who's a guest, so confirm it.
+    if (f.domain.trim().toLowerCase() !== String(o.domain).toLowerCase()) {
+      openDialog('confirm', { title: 'Change the primary domain?', message: `People whose email isn’t @${f.domain.trim().toLowerCase()} will count as outside the organization (guests): sharing policies and data protection will treat them that way.`, confirmLabel: 'Change domain', danger: true, onConfirm: save });
+      return;
+    }
+    save();
+  };
+  const err = (k) => errors[k] && <span className="field-error">{errors[k]}</span>;
   return (
     <Section title="Organization settings" desc="Basic information about your organization.">
-      <form className="form" onSubmit={(e) => { e.preventDefault(); if (!f.name.trim()) return; api.updateOrg({ name: f.name.trim(), domain: f.domain.trim() }); toast('Organization updated', { type: 'success' }); }}>
+      <form className="form" onSubmit={submit} noValidate>
         <div className="form-grid">
-          <label className="field"><span className="field-label">Organization name</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-          <label className="field"><span className="field-label">Primary domain</span><input className="input" value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} /></label>
-          <label className="field"><span className="field-label">Data center</span><select className="select full" defaultValue="us"><option value="us">United States</option><option value="eu">Europe</option><option value="in">India</option><option value="au">Australia</option></select></label>
+          <label className="field"><span className="field-label">Organization name</span><input className="input" {...field('name')} />{err('name')}</label>
+          <label className="field"><span className="field-label">Primary domain</span><input className="input" {...field('domain')} placeholder="company.com" />{err('domain')}</label>
+          <label className="field"><span className="field-label">Data center</span><select className="select full" {...field('dataCenter')}>{DATA_CENTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+          <label className="field"><span className="field-label">Support email</span><input className="input" type="email" {...field('supportEmail')} placeholder={`it@${o.domain}`} />{err('supportEmail') || <span className="muted small">Where Help → Contact support sends requests.</span>}</label>
+          <label className="field"><span className="field-label">User Agreement link</span><input className="input" type="url" {...field('termsUrl')} placeholder="https://" />{err('termsUrl')}</label>
+          <label className="field"><span className="field-label">Privacy Policy link</span><input className="input" type="url" {...field('privacyUrl')} placeholder="https://" />{err('privacyUrl')}</label>
         </div>
-        <div className="btn-row end"><button className="btn btn-primary" disabled={f.name === state.org.name && f.domain === state.org.domain}>Save changes</button></div>
+        <p className="muted small">With both links filled in, the sign-in page shows “By signing in you agree to the User Agreement and Privacy Policy”.</p>
+        <div className="btn-row end"><button className="btn btn-primary" disabled={!dirty || invalid}>Save changes</button></div>
       </form>
     </Section>
   );
@@ -315,6 +368,7 @@ function OrganizeTab() {
 function PoliciesTab() {
   const { state, api } = useDrive();
   const { toast } = useUI();
+  const { openDialog } = useUI();
   const p = state.org.policies;
   const set = (k, v) => { api.updateOrg({ policies: { [k]: v } }); toast('Policy updated', { type: 'success' }); };
   const [domains, setDomains] = useState(p.allowedDomains);
@@ -335,7 +389,13 @@ function PoliciesTab() {
         </SettingRow>
       </Section>
       <Section title="Security policies">
-        <SettingRow title="Enforce two-factor authentication" desc="All members must set up 2FA at next sign-in."><Switch checked={p.twoFactor} onChange={(v) => set('twoFactor', v)} label="Enforce 2FA" /></SettingRow>
+        <SettingRow title="Enforce two-factor authentication" desc="All members must set up 2FA at next sign-in."><Switch checked={p.twoFactor} onChange={(v) => {
+          if (v && !twoFactorOn(state)) {
+            openDialog('confirm', { title: 'Require two-factor authentication?', message: 'Everyone will have to set up an authenticator app before they can keep using WorkDrive, starting with you: you’ll be taken to the setup now.', confirmLabel: 'Require 2FA', onConfirm: () => set('twoFactor', true) });
+            return;
+          }
+          set('twoFactor', v);
+        }} label="Enforce 2FA" /></SettingRow>
         <SettingRow title="Session timeout">
           <select className="select" aria-label="Session timeout" value={p.sessionTimeout} onChange={(e) => set('sessionTimeout', Number(e.target.value))}>{[15, 30, 60, 240, 720].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? 's' : ''}`}</option>)}</select>
         </SettingRow>
@@ -354,7 +414,7 @@ function AuditTab() {
     && (!q || `${a.target} ${a.details}`.toLowerCase().includes(q.toLowerCase())));
   const exportCsv = () => {
     const rows = [['Time', 'User', 'Action', 'Target', 'Details', 'IP'], ...list.map((a) => [new Date(a.at).toISOString(), state.users.find((u) => u.id === a.actorId)?.name || '', a.action, a.target, a.details || '', a.ip])];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows); // escapes formula-like cells, e.g. a file name starting with "="
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const el = document.createElement('a'); el.href = url; el.download = 'audit-log.csv'; el.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   };

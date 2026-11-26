@@ -4,7 +4,7 @@ import { Inbox, Plus, Copy, QrCode, ExternalLink, Trash2, ChevronDown, ChevronRi
 import { useDrive } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
 import { folderRoute, locationOf, isTrashedDeep } from '../store/selectors';
-import { formatDate, formatDateTime } from '../utils/format';
+import { formatDate, formatDateTime, toDateInput, fromDateInput } from '../utils/format';
 import { requestStatus, requestUrl } from '../utils/sharing';
 import PageHeader from '../components/layout/PageHeader';
 import { EmptyState, Switch, FileIcon } from '../components/common';
@@ -15,6 +15,18 @@ export default function FileRequestsView() {
   const { state, api } = useDrive();
   const ui = useUI();
   const [open, setOpen] = useState(null);
+  // Changing when a request closes (also how an expired request is reopened).
+  const [dateEdit, setDateEdit] = useState(null); // null | { id, value: 'YYYY-MM-DD', error }
+  const saveDate = (e, r, clear = false) => {
+    e?.preventDefault();
+    const expires = clear ? null : fromDateInput(dateEdit.value);
+    if (!clear && (!expires || expires < Date.now())) { setDateEdit({ ...dateEdit, error: 'Choose today or a later date' }); return; }
+    const wasExpired = r.expires && r.expires < Date.now();
+    api.updateFileRequest(r.id, { expires, ...(wasExpired ? { enabled: true } : {}) });
+    api.logEvent('File request updated', r.title, expires ? `Closes ${formatDate(expires)}` : 'No closing date');
+    ui.toast(expires ? `“${r.title}” now closes ${formatDate(expires)}${wasExpired ? ' and is open again' : ''}` : `“${r.title}” no longer closes automatically`, { type: 'success' });
+    setDateEdit(null);
+  };
   const requests = (state.fileRequests || []).filter((r) => r.createdBy === state.meId).sort((a, b) => b.createdAt - a.createdAt);
   const disabled = !state.org.policies.fileRequests;
 
@@ -61,12 +73,26 @@ export default function FileRequestsView() {
                     </div>
                     <span className={`pill ${STATUS[st][1]}`}>{STATUS[st][0]}</span>
                     <Switch checked={r.enabled && st !== 'expired'} onChange={(v) => { api.updateFileRequest(r.id, { enabled: v }); ui.toast(v ? 'Request reopened' : 'Request closed', { type: 'success' }); }}
-                      label={st === 'expired' ? 'Expired: change the closing date to reopen' : r.enabled ? 'Accepting uploads' : 'Closed'} disabled={gone || st === 'expired'} />
+                      label={st === 'expired' ? 'Expired: use Closing date to reopen' : r.enabled ? 'Accepting uploads' : 'Closed'} disabled={gone || st === 'expired'} />
+                    <button className="icon-btn" onClick={() => setDateEdit(dateEdit?.id === r.id ? null : { id: r.id, value: toDateInput(r.expires), error: '' })} aria-label="Change closing date" data-tip="Closing date" aria-expanded={dateEdit?.id === r.id} disabled={gone}><CalendarClock size={16} /></button>
                     <button className="icon-btn" onClick={() => copy(r)} aria-label="Copy upload link" data-tip="Copy link" disabled={st !== 'active'}><Copy size={16} /></button>
                     <button className="icon-btn" onClick={() => ui.openDialog('linkTools', { requestId: r.id })} aria-label="QR code for upload link" data-tip="QR code" disabled={gone}><QrCode size={16} /></button>
                     <a className="icon-btn" href={requestUrl(r.id)} target="_blank" rel="noreferrer" aria-label="Open upload page" data-tip="Open upload page"><ExternalLink size={16} /></a>
                     <button className="icon-btn" onClick={() => remove(r)} aria-label="Delete request" data-tip="Delete"><Trash2 size={16} /></button>
                   </div>
+                  {dateEdit?.id === r.id && (
+                    <form className="request-date" onSubmit={(e) => saveDate(e, r)}>
+                      <label className="field"><span className="field-label">Closes on</span>
+                        <input type="date" className="input" min={toDateInput(Date.now())} value={dateEdit.value} onChange={(e) => setDateEdit({ ...dateEdit, value: e.target.value, error: '' })} autoFocus />
+                        {dateEdit.error && <span className="field-error">{dateEdit.error}</span>}
+                      </label>
+                      <div className="btn-row">
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDateEdit(null)}>Cancel</button>
+                        {r.expires && <button type="button" className="btn btn-secondary btn-sm" onClick={() => saveDate(null, r, true)}>No closing date</button>}
+                        <button className="btn btn-primary btn-sm" disabled={!dateEdit.value}>Save</button>
+                      </div>
+                    </form>
+                  )}
                   {expanded && (
                     <div className="request-uploads">
                       {r.message && <p className="muted small">“{r.message}”</p>}

@@ -9,6 +9,7 @@ import { PublicShell, Welcome } from '../views/PublicViews';
 import {
   DEFAULT_BRANDING, ACCENT_PRESETS, HEADER_PRESETS, DEFAULT_LOGO, brandingOf, isHex, contrast, processLogo,
 } from './branding';
+import { useUnsavedGuard } from '../utils/useUnsavedGuard';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -99,23 +100,7 @@ export default function BrandingTab() {
   const err = emailErr || (colorErr ? 'Colours must be hex values like #1686D9' : '');
 
   // Don't lose an unsaved draft silently: warn before leaving the page, and before in-app links navigate away.
-  const dirtyRef = useRef(false);
-  dirtyRef.current = dirty;
-  useEffect(() => {
-    const onUnload = (e) => { if (!dirtyRef.current) return; e.preventDefault(); e.returnValue = ''; };
-    const onClick = (e) => {
-      if (!dirtyRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      const a = e.target.closest?.('a[href]');
-      if (!a || a.target === '_blank' || a.closest('.branding-layout')) return;
-      const url = new URL(a.href, window.location.href);
-      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
-      // eslint-disable-next-line no-alert
-      if (!window.confirm('You have unsaved branding changes. Leave without saving?')) { e.preventDefault(); e.stopPropagation(); }
-    };
-    window.addEventListener('beforeunload', onUnload);
-    document.addEventListener('click', onClick, true);
-    return () => { window.removeEventListener('beforeunload', onUnload); document.removeEventListener('click', onClick, true); };
-  }, []);
+  useUnsavedGuard(dirty, 'You have unsaved branding changes. Leave without saving?', '.branding-layout');
   const discard = () => { setDraft(saved); setBadColor({}); setFieldsKey((k) => k + 1); };
 
   // Real pages to open, so admins can see the result in context.

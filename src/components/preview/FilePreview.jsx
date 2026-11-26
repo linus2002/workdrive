@@ -170,6 +170,13 @@ function ShortcutsPopover({ cat, markup, onClose, find }) {
   );
 }
 
+/** Does the focused element use ← → itself (media, sliders, sideways-scrolling regions)? */
+function ownsArrowKeys(el, overlay) {
+  if (!el || el === overlay || el === document.body) return false;
+  if (['VIDEO', 'AUDIO'].includes(el.tagName) || el.type === 'range' || el.getAttribute?.('role') === 'slider') return true;
+  return el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== 'hidden';
+}
+
 export default function FilePreview() {
   const { state, api } = useDrive();
   const ui = useUI();
@@ -325,6 +332,9 @@ export default function FilePreview() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { if (editing) { e.preventDefault(); save(); } return; }
       if (e.altKey || e.metaKey || e.ctrlKey) return; // Alt+← is browser Back, Ctrl/Cmd+± is browser zoom
       if (e.key === '?') { e.preventDefault(); setKeysOpen((o) => !o); return; }
+      // ← → go to the previous/next file, except where they already mean something: seeking a video or audio
+      // track, a slider, or scrolling a wide spreadsheet / code view sideways.
+      if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && ownsArrowKeys(document.activeElement, overlayRef.current)) return;
       if (e.key === 'ArrowRight') go(1);
       if (e.key === 'ArrowLeft') go(-1);
       if (e.key === '+' || e.key === '=') setZoom((z) => Math.min(3, z + 0.25));
@@ -451,7 +461,7 @@ export default function FilePreview() {
       case 'document': return <DocViewer item={item} editing={editing} draft={draft} setDraft={wrap(setDraft)} zoom={zoom} />;
       case 'spreadsheet': return <SheetViewer item={item} editing={editing} sheet={sheet} setSheet={wrap(setSheet)} />;
       case 'presentation': return <SlidesViewer item={item} editing={editing} slides={slides} setSlides={wrap(setSlides)} />;
-      case 'video': return <VideoViewer item={item} />;
+      case 'video': return <VideoViewer item={item} onDownload={() => actions.download([item])} />;
       case 'archive': return <ArchiveViewer item={item} onExtract={!item.trashed && item.ext === 'zip' ? () => { closePreview(); actions.extractZip(item); } : undefined} />;
       default: return <NoPreview item={item} onDownload={() => actions.download([item])} />;
     }

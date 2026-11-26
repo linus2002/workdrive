@@ -73,6 +73,7 @@ export const FileRow = memo(function FileRow({
     <div
       className={`file-row ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${drop.over ? 'drop-over' : ''}`}
       role="row"
+      id={`fi-${item.id}`}
       aria-rowindex={rowIndex}
       aria-selected={selected}
       data-id={item.id}

@@ -3,7 +3,7 @@ import { Inbox, Copy, CheckCircle2, QrCode, Eye, EyeOff } from 'lucide-react';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { writableFolders } from '../../store/selectors';
-import { toDateInput, fromDateInput } from '../../utils/format';
+import { toDateInput, fromDateInput, pastDateError } from '../../utils/format';
 import { requestUrl } from '../../utils/sharing';
 import { hashSecret } from '../../data/storage/secrets';
 import { Modal, Switch } from '../common';
@@ -27,7 +27,7 @@ export default function FileRequestDialog({ folderId, onClose }) {
   const [busy, setBusy] = useState(false);
 
   const err = !state.org.policies.fileRequests ? 'File requests are turned off by your administrator'
-    : !folder ? 'Choose a folder' : !title.trim() ? 'Give the request a title' : usePwd && pwd.length < 4 ? 'Password must be at least 4 characters' : null;
+    : !folder ? 'Choose a folder' : !title.trim() ? 'Give the request a title' : usePwd && pwd.length < 4 ? 'Password must be at least 4 characters' : pastDateError(expires);
 
   const copy = async (url) => {
     try { await navigator.clipboard.writeText(url); toast('Upload link copied', { type: 'success' }); } catch { toast(url, { type: 'info', duration: 8000 }); }
@@ -85,7 +85,8 @@ export default function FileRequestDialog({ folderId, onClose }) {
         </label>
         <div className="form-grid">
           <label className="field"><span className="field-label">Closes on</span>
-            <input className="input" type="date" value={expires} min={toDateInput(Date.now())} onChange={(e) => setExpires(e.target.value)} />
+            <input className="input" type="date" value={expires} min={toDateInput(Date.now())} onChange={(e) => setExpires(e.target.value)} aria-invalid={!!pastDateError(expires) || undefined} />
+            {pastDateError(expires) && <span className="field-error">{pastDateError(expires)}</span>}
           </label>
           <div className="field"><span className="field-label">Ask for name and email</span><Switch checked={requireIdentity} onChange={setRequireIdentity} label="Ask for name and email" /></div>
         </div>

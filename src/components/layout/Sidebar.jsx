@@ -9,11 +9,18 @@ import { requestStatus } from '../../utils/sharing';
 import { productivityCounts, newActivityCount } from '../../utils/productivity';
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
-import { ancestors, myUsage, accessOf, canEdit, trashedForMe, isTrashedDeep, canSee, folderRoute, parentRoute, locationOf, resolveItem, teamRoleOf, shareActive } from '../../store/selectors';
+import { childIds, ancestors, myUsage, accessOf, canEdit, trashedForMe, isTrashedDeep, canSee, folderRoute, parentRoute, locationOf, resolveItem, teamRoleOf, shareActive } from '../../store/selectors';
 import { formatSize } from '../../utils/format';
 import { FolderGlyph, FileIcon, ProgressBar } from '../common';
 import { useDropTarget } from '../files/dnd';
 import { useT } from '../../i18n';
+
+/** Folders directly inside `parentId` (or at the root of `space`), A–Z. Uses the cached child index, not a full scan. */
+function subfolders(items, parentId, space) {
+  return childIds(items, parentId).map((id) => items[id])
+    .filter((i) => i && i.type === 'folder' && !i.trashed && (parentId || i.space === space))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 function TreeNode({ folder, depth, activeChain, onNavigate }) {
   const { state } = useDrive();
@@ -21,7 +28,7 @@ function TreeNode({ folder, depth, activeChain, onNavigate }) {
   const location = useLocation();
   const [open, setOpen] = useState(activeChain.has(folder.id));
   useEffect(() => { if (activeChain.has(folder.id)) setOpen(true); }, [activeChain, folder.id]);
-  const kids = useMemo(() => Object.values(state.items).filter((i) => i.type === 'folder' && !i.trashed && i.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name)), [state.items, folder.id]);
+  const kids = useMemo(() => subfolders(state.items, folder.id), [state.items, folder.id]);
   const to = folder.space.startsWith('t') ? `/team-folders/${folder.space}/${folder.id}` : `/folders/${folder.id}`;
   // Also highlight a collapsed ancestor of the current folder, so you never lose your place.
   const active = location.pathname === to || (!open && activeChain.has(folder.id));
@@ -54,7 +61,7 @@ function TeamNode({ team, activeChain, onNavigate }) {
   const inTeam = location.pathname === `/team-folders/${team.id}` || location.pathname.startsWith(`/team-folders/${team.id}/`);
   const [open, setOpen] = useState(inTeam);
   useEffect(() => { if (inTeam) setOpen(true); }, [inTeam]);
-  const kids = useMemo(() => Object.values(state.items).filter((i) => i.type === 'folder' && !i.trashed && !i.parentId && i.space === team.id).sort((a, b) => a.name.localeCompare(b.name)), [state.items, team.id]);
+  const kids = useMemo(() => subfolders(state.items, null, team.id), [state.items, team.id]);
   const role = teamRoleOf(state, team.id); // null once the membership has expired
   const drop = useDropTarget(null, team.id, canEdit(role || 'none'));
   // Highlight the team row when you're inside it but the folder you're in isn't visible in the tree.
@@ -136,7 +143,7 @@ export default function Sidebar() {
     return new Set([...ancestors(state.items, id).map((a) => a.id), id]);
   }, [location.pathname, state.items]);
 
-  const rootFolders = useMemo(() => Object.values(state.items).filter((i) => i.type === 'folder' && !i.trashed && !i.parentId && i.space === 'my').sort((a, b) => a.name.localeCompare(b.name)), [state.items]);
+  const rootFolders = useMemo(() => subfolders(state.items, null, 'my'), [state.items]);
   const myTeams = state.teams.filter((tm) => teamRoleOf(state, tm.id)); // expired memberships drop out
   const trashCount = trashedForMe(state).length;
 

@@ -51,12 +51,17 @@ async function inflateRaw(data) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** Read every entry's bytes. Returns [{ path, dir, data: Uint8Array, date }]. */
-export async function readZip(blob, { maxEntries = 2000, maxBytes = 300 * 1024 * 1024 } = {}) {
+/**
+ * Read entries' bytes. Returns [{ path, dir, data: Uint8Array, date }].
+ * `only(path)` limits it to the entries you need (e.g. word/document.xml): the others aren't decompressed,
+ * so a 100 MB presentation full of media doesn't have all its pictures unpacked just to read one slide.
+ */
+export async function readZip(blob, { maxEntries = 2000, maxBytes = 300 * 1024 * 1024, only = null } = {}) {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const view = new DataView(bytes.buffer);
-  const index = readZipIndex(bytes);
-  if (index.length > maxEntries) throw new ZipError(`The archive has ${index.length} entries; the limit is ${maxEntries}.`);
+  const all = readZipIndex(bytes);
+  if (all.length > maxEntries) throw new ZipError(`The archive has ${all.length} entries; the limit is ${maxEntries}.`);
+  const index = only ? all.filter((e) => !e.dir && only(e.path)) : all;
   const total = index.reduce((s, e) => s + e.size, 0);
   if (total > maxBytes) throw new ZipError('The archive is too large to extract in the browser.');
   const out = [];

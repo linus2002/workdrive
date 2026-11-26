@@ -84,3 +84,12 @@ export function snippet(id, q, radius = 70) {
   const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
   return { parts: raw.split(re).filter(Boolean).map((p) => ({ text: p, hit: words.includes(p.toLowerCase()) })), source: e.source };
 }
+
+/**
+ * Was this index entry made from the item's current contents? Keys are `version|size|<anything>|flags`: the
+ * third part used to be the modified time, which also changes on renames, so it's ignored (renames don't re-index).
+ */
+export const indexedCurrent = (entry, item) => {
+  const k = entry?.key?.split('|');
+  return !!k && k[0] === String(item.version || 1) && k[1] === String(item.size);
+};

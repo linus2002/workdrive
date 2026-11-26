@@ -13,6 +13,25 @@ import { fileBlob } from '../../store/useItemActions';
 import { readZipIndex, safeZipPath, ZipError } from '../../utils/zip';
 import { parseCsv } from '../../utils/csv';
 
+/**
+ * Contents read from an uploaded Office file's bytes with `read(blob)` (docx text, xlsx cells, pptx slides):
+ * undefined while loading, null if the bytes aren't available or can't be read.
+ */
+function useOfficeContent(item, active, read) {
+  const { blobsVersion } = useDrive();
+  const [state, setState] = useState({ key: null, value: undefined });
+  const key = active ? `${item.id}@${item.version || 1}#${blobsVersion}` : null;
+  useEffect(() => {
+    if (!key) return undefined;
+    let alive = true;
+    fileBlob(item).then((b) => (b ? read(b) : null)).catch(() => null).then((value) => { if (alive) setState({ key, value }); });
+    return () => { alive = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- key identifies the file version
+  return state.key === key ? state.value : undefined;
+}
+const loadExtract = () => import('../../search/extract');
+const SimplifiedNote = ({ what }) => <div className="sign-message" role="status">Simplified preview: the {what}, without formatting or pictures. Download the file to see it exactly as it looks.</div>;
+
 export const realUrl = (item) => blobRegistry.get(item.id)?.url || item.dataUrl || null;
 
 /**
@@ -73,7 +92,7 @@ function PdfCanvasViewer({ item, zoom, onDownload }) {
   if (pdf.error) {
     return (
       <NoPreview item={item} onDownload={onDownload}
-        text={`${pdf.error} This browser can't show the PDF inline here${onDownload ? ', so download it to open it in a PDF app.' : '.'}`} />
+        text={`${pdf.error}${onDownload ? ' Download it to open it in a PDF app.' : ''}`} />
     );
   }
   return <PdfPages pdf={pdf} zoom={zoom} />;
@@ -172,7 +191,12 @@ export function AudioViewer({ item }) {
 
 export function DocViewer({ item, editing, draft, setDraft, zoom }) {
   const uploadedBinary = !!realUrl(item) && item.content == null;
-  if (uploadedBinary) return <NoPreview item={item} text="Uploaded Office documents can't be rendered in this prototype. Download the file to open it in a desktop app." />;
+  const docx = useOfficeContent(item, uploadedBinary && item.ext === 'docx', async (b) => (await (await loadExtract()).docxParagraphs(b, 5000)).map((p) => p.text).join('\n\n'));
+  if (uploadedBinary && item.ext === 'docx') {
+    if (docx === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+    if (docx) return <div className="viewer-scroll"><SimplifiedNote what="document’s text" /><PaperPages text={docx} zoom={zoom} /></div>;
+  }
+  if (uploadedBinary) return <NoPreview item={item} text="This document can’t be shown here. Download it to open it in Word or another word processor." />;
   if (editing) {
     return (
       <div className="viewer-scroll">
@@ -223,14 +247,23 @@ function useCsvRows(item, active) {
 /** True for a CSV the user uploaded (its rows come from the file, not item.sheet or sample data). */
 export const isUploadedCsv = (item) => item.ext === 'csv' && !item.sheet && (!!realUrl(item) || !!item.mime);
 
+const SHEET_MAX_ROWS = 1000;
+const SHEET_MAX_COLS = 50;
+
 export function SheetViewer({ item, editing, sheet, setSheet }) {
   const uploadedBinary = !!realUrl(item) && !item.sheet;
   const csv = isUploadedCsv(item);
   const csvRows = useCsvRows(item, csv && !editing);
-  if (uploadedBinary && !['csv'].includes(item.ext)) return <NoPreview item={item} text="Uploaded spreadsheets can't be rendered in this prototype. Download to open in a spreadsheet app." />;
+  const xlsx = uploadedBinary && item.ext === 'xlsx' && !editing;
+  const xlsxRows = useOfficeContent(item, xlsx, async (b) => (await loadExtract()).xlsxGrid(b, SHEET_MAX_ROWS + 1, SHEET_MAX_COLS + 1));
+  if (xlsx && xlsxRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (uploadedBinary && !csv && !(xlsx && xlsxRows?.length)) return <NoPreview item={item} text="This spreadsheet can’t be shown here. Download it to open it in Excel or another spreadsheet app." />;
   if (csv && !editing && csvRows === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
   if (csv && !editing && csvRows === null) return <NoPreview item={item} text="This file's contents aren't available in this browser. Upload it again to preview it." />;
-  const rows = editing ? sheet : csv ? csvRows : sampleSheet(item);
+  const all = editing ? sheet : csv ? csvRows : xlsx ? xlsxRows : sampleSheet(item);
+  // A big CSV (tens of thousands of rows) would be hundreds of thousands of table cells: show the start.
+  const capped = !editing && (all.length > SHEET_MAX_ROWS || all.some((r) => r.length > SHEET_MAX_COLS));
+  const rows = capped ? all.slice(0, SHEET_MAX_ROWS).map((r) => r.slice(0, SHEET_MAX_COLS)) : all;
   const width = rows.reduce((w, r) => (r.length > w ? r.length : w), 6); // no spread: big CSVs have 100k+ rows
   const height = Math.max(editing ? rows.length : 18, rows.length);
   const set = (r, c, v) => setSheet((s) => {
@@ -242,6 +275,8 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
   });
   return (
     <div className="viewer-scroll sheet-scroll" tabIndex={0} role="region" aria-label="Spreadsheet">
+      {xlsx && <SimplifiedNote what="first sheet’s values" />}
+      {capped && <div className="sign-message" role="status">Showing the first {Math.min(all.length, SHEET_MAX_ROWS).toLocaleString()} of {all.length.toLocaleString()} rows{all.some((r) => r.length > SHEET_MAX_COLS) ? ` and the first ${SHEET_MAX_COLS} columns` : ''}. Download the file to see all of it.</div>}
       <div className="sheet-wrap">
         <table className="sheet">
           <thead><tr><th className="corner" />{Array.from({ length: width }).map((_, c) => <th key={c}>{col(c)}</th>)}</tr></thead>
@@ -273,7 +308,9 @@ export function SheetViewer({ item, editing, sheet, setSheet }) {
 
 export function SlidesViewer({ item, editing, slides, setSlides }) {
   const uploadedBinary = !!realUrl(item) && !item.slides;
-  const list = editing ? slides : sampleSlides(item);
+  const pptx = uploadedBinary && item.ext === 'pptx' && !editing;
+  const pptxSlides = useOfficeContent(item, pptx, async (b) => (await loadExtract()).pptxSlides(b));
+  const list = editing ? slides : pptx ? (pptxSlides?.length ? pptxSlides : []) : sampleSlides(item);
   const [idx, setIdx] = useState(0);
   useEffect(() => { setIdx(0); }, [item.id]); // each file starts on its first slide
   // Find in file: slides containing the query are marked in the rail; if this slide has none, go to the first that does.
@@ -300,7 +337,8 @@ export function SlidesViewer({ item, editing, slides, setSlides }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [editing, list.length]);
-  if (uploadedBinary) return <NoPreview item={item} text="Uploaded presentations can't be rendered in this prototype. Download to open in a presentation app." />;
+  if (pptx && pptxSlides === undefined) return <div className="viewer-center"><div className="muted">Loading…</div></div>;
+  if (uploadedBinary && !(pptx && pptxSlides?.length)) return <NoPreview item={item} text="This presentation can’t be shown here. Download it to open it in PowerPoint or another presentation app." />;
   const s = list[idx] || { title: '', body: '' };
   const upd = (patch) => setSlides((arr) => arr.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
   return (
@@ -340,11 +378,15 @@ export function SlidesViewer({ item, editing, slides, setSlides }) {
 }
 
 /** contained: hide the browser's own download / picture-in-picture options (public link and embed pages). */
-export function VideoViewer({ item, contained = false }) {
+export function VideoViewer({ item, contained = false, onDownload }) {
   const url = realUrl(item);
+  // A damaged file, or a format this browser can't decode (e.g. HEVC on some systems): say so instead of a black box.
+  const [failed, setFailed] = useState(null);
+  useEffect(() => { setFailed(null); }, [url]);
+  if (url && failed === url) return <NoPreview item={item} onDownload={contained ? undefined : onDownload} text="This video can’t be played in this browser. The file may be damaged or use a format it doesn’t support. Download it to play it in a video app." />;
   if (url) {
     const lock = contained ? { controlsList: 'nodownload noremoteplayback', disablePictureInPicture: true, onContextMenu: (e) => e.preventDefault() } : {};
-    return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay {...lock} /></div>;
+    return <div className="viewer-center dark"><video className="preview-video" src={url} controls autoPlay {...lock} onError={() => setFailed(url)} /></div>;
   }
   return (
     <div className="viewer-center dark">

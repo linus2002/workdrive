@@ -66,6 +66,7 @@ export function useDropTarget(folderId, space, enabled = true) {
           if (!ids.length) { toast(`You don't have permission to move ${denied > 1 ? 'these items' : 'this item'}`, { type: 'warning' }); return; }
           const origin = ids.map((id) => ({ id, parentId: state.items[id]?.parentId || null, space: state.items[id]?.space }));
           const res = api.moveItems(ids, folderId, space);
+          if (res.quota) { toast(`Nothing was moved: ${res.quota}`, { type: 'error' }); return; }
           const target = folderId ? state.items[folderId]?.name : spaceLabel(state, space);
           const skipped = [denied + (res.denied || 0) && `${denied + (res.denied || 0)} view-only`, res.locked && `${res.locked} locked`, res.held && `${res.held} on legal hold`, res.lostAccess && `${res.lostAccess} you'd lose access to (it isn't yours)`].filter(Boolean).join(', ');
           const undo = { label: 'Undo', onClick: () => {

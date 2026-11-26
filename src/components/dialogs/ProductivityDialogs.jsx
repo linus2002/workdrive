@@ -3,7 +3,7 @@ import { CheckSquare, BadgeCheck, Keyboard, X, AlertTriangle } from 'lucide-reac
 import { useDrive } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
 import { peopleWithAccess } from '../../store/selectors';
-import { toDateInput } from '../../utils/format';
+import { toDateInput, pastDateError } from '../../utils/format';
 import { Modal, Avatar, FileIcon } from '../common';
 
 const endOfDay = (dateStr) => (dateStr ? new Date(`${dateStr}T23:59:00`).getTime() : null);
@@ -36,7 +36,9 @@ export function TaskDialog({ itemId, taskId, onClose }) {
   const [priority, setPriority] = useState(existing?.priority || 'normal');
   if (!item) return null;
   const assignee = people.find((p) => p.id === assigneeId);
-  const err = !title.trim() ? 'Describe the task' : null;
+  // An overdue task can keep its date; a newly picked date can't be in the past.
+  const dueErr = due !== toDateInput(existing?.due) ? pastDateError(due) : null;
+  const err = !title.trim() ? 'Describe the task' : dueErr;
 
   const submit = (e) => {
     e.preventDefault();
@@ -66,7 +68,8 @@ export function TaskDialog({ itemId, taskId, onClose }) {
             </select>
           </label>
           <label className="field"><span className="field-label">Due date</span>
-            <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+            <input className="input" type="date" value={due} min={toDateInput(Date.now())} onChange={(e) => setDue(e.target.value)} aria-invalid={!!dueErr || undefined} />
+            {dueErr && <span className="field-error">{dueErr}</span>}
           </label>
         </div>
         {assignee && !assignee.hasAccess && <div className="field-warn"><AlertTriangle size={13} /> {assignee.name} can't open this {item.type} yet. Share it with them so they can work on the task.</div>}
@@ -101,7 +104,7 @@ export function ApprovalDialog({ itemId, onClose }) {
   const pending = (state.approvals || []).find((a) => a.itemId === itemId && a.status === 'pending');
   const shown = people.filter((p) => !picked.includes(p.id) && (!q || p.name.toLowerCase().includes(q.toLowerCase()) || p.email.toLowerCase().includes(q.toLowerCase())));
   const noAccess = picked.map((id) => people.find((p) => p.id === id)).filter((p) => p && !p.hasAccess);
-  const err = pending ? 'This file already has a pending approval' : !picked.length ? 'Choose at least one approver' : null;
+  const err = pending ? 'This file already has a pending approval' : !picked.length ? 'Choose at least one approver' : pastDateError(due);
 
   const submit = () => {
     if (err) return;
@@ -147,7 +150,7 @@ export function ApprovalDialog({ itemId, onClose }) {
           </div>
         )}
         <div className="form-grid">
-          <label className="field"><span className="field-label">Respond by</span><input className="input" type="date" value={due} min={toDateInput(Date.now())} onChange={(e) => setDue(e.target.value)} /></label>
+          <label className="field"><span className="field-label">Respond by</span><input className="input" type="date" value={due} min={toDateInput(Date.now())} onChange={(e) => setDue(e.target.value)} aria-invalid={!!pastDateError(due) || undefined} />{pastDateError(due) && <span className="field-error">{pastDateError(due)}</span>}</label>
           <label className="check-row self-end"><input type="checkbox" className="cb" checked={applyLabel} onChange={(e) => setApplyLabel(e.target.checked)} /> Add the “Approved” label when approved</label>
         </div>
         <label className="field"><span className="field-label">Message <span className="muted">(optional)</span></span>

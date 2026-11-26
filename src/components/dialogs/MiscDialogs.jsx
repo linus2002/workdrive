@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LifeBuoy, Keyboard, BookOpen, MessageCircle, ChevronDown } from 'lucide-react';
 import { useUI } from '../../store/UIContext';
+import { useDrive, useMe } from '../../store/DriveStore';
 import { Modal } from '../common';
 import { SHORTCUT_GROUPS } from './ProductivityDialogs';
 
@@ -18,6 +19,24 @@ export function HelpDialog({ onClose }) {
   const [tab, setTab] = useState('shortcuts');
   const [open, setOpen] = useState(0);
   const [msg, setMsg] = useState('');
+  const [topic, setTopic] = useState('Uploading & syncing');
+  const { state } = useDrive();
+  const me = useMe();
+  // Requests go to the support address the admin set (Admin Console → Organization), through your email app.
+  const supportEmail = state.org.supportEmail || `it@${state.org.domain}`;
+  const sendRequest = (e) => {
+    e.preventDefault();
+    const body = `${msg.trim()}
+
+—
+From: ${me?.name || ''} <${me?.email || ''}>
+Page: ${window.location.pathname}
+Browser: ${navigator.userAgent}`;
+    window.location.href = `mailto:${supportEmail}?subject=${encodeURIComponent(`[WorkDrive] ${topic}`)}&body=${encodeURIComponent(body)}`;
+    toast(`Your email app is opening with the request to ${supportEmail}. Send it from there.`, { type: 'info', duration: 7000 });
+    setMsg('');
+    onClose();
+  };
   return (
     <Modal title="Help & support" onClose={onClose} width={600} icon={<LifeBuoy size={20} />}>
       <div className="tabs" role="tablist" aria-label="Help sections" onKeyDown={(e) => {
@@ -53,16 +72,17 @@ export function HelpDialog({ onClose }) {
         </div>
       )}
       {tab === 'contact' && (
-        <form className="form" onSubmit={(e) => { e.preventDefault(); toast('Support request sent. We will reply within 1 business day.', { type: 'success' }); setMsg(''); onClose(); }}>
+        <form className="form" onSubmit={sendRequest}>
+          <p className="muted small">Your request goes to <strong>{supportEmail}</strong> from your email app.</p>
           <label className="field"><span className="field-label">Topic</span>
-            <select className="select full"><option>Uploading & syncing</option><option>Sharing & permissions</option><option>Billing</option><option>Something else</option></select>
+            <select className="select full" value={topic} onChange={(e) => setTopic(e.target.value)}><option>Uploading & syncing</option><option>Sharing & permissions</option><option>Sign-in & account</option><option>Something else</option></select>
           </label>
           <label className="field"><span className="field-label">How can we help?</span>
             <textarea className="input textarea" rows={4} value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Describe the issue…" required />
           </label>
           <div className="btn-row end">
             {msg.trim().length < 5 && <span className="muted small grow" id="help-send-hint">Write at least 5 characters</span>}
-            <button className="btn btn-primary" disabled={msg.trim().length < 5} aria-describedby={msg.trim().length < 5 ? 'help-send-hint' : undefined}>Send request</button>
+            <button className="btn btn-primary" disabled={msg.trim().length < 5} aria-describedby={msg.trim().length < 5 ? 'help-send-hint' : undefined}>Open in email app</button>
           </div>
         </form>
       )}

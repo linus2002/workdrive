@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:prod": "vite preview --config vite.prod-preview.config.js",
     "lint": "eslint src tests",
     "test": "vitest run",
     "test:e2e": "node tests/e2e/run.mjs",
