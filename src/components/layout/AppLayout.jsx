@@ -181,6 +181,15 @@ export default function AppLayout() {
     if (needs2fa && location.pathname !== '/settings/security') navigateTo('/settings/security?setup=2fa', { replace: true });
   }, [needs2fa, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // While a file preview covers the page, the page behind it is inert: Tab can't wander into the sidebar or the
+  // file list, and screen readers don't read them. (Dialogs, menus and toasts stay usable.)
+  useEffect(() => {
+    // Everything in the page except the toasts, which show above the preview (their Undo / View buttons stay usable).
+    const behind = [...document.querySelectorAll('.app > :not(.toasts)')];
+    behind.forEach((el) => { el.inert = !!preview; });
+    return () => behind.forEach((el) => { el.inert = false; });
+  }, [preview]);
+
   // Leaving a page closes anything floating over it (menus, mobile nav, dialogs).
   useEffect(() => { setMobileNav(false); hideMenu(); closeDialog(); }, [location.pathname]); // eslint-disable-line
   useEffect(() => { if (persistError) toast(persistError, { type: 'warning' }); }, [persistError]); // eslint-disable-line

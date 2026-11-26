@@ -90,6 +90,17 @@ function NotificationsPanel() {
   }, [unread]);
 
   const shown = filter === 'unread' ? state.notifications.filter((n) => !n.read) : state.notifications;
+  // When a row disappears (removed, or marked read in the Unread view), move focus to the next row's main button
+  // (or the previous one, or the panel) instead of letting it fall back to the page.
+  const listRef = useRef(null);
+  const keepFocus = (e, id, removing) => {
+    const leaves = removing || (filter === 'unread' && !state.notifications.find((x) => x.id === id)?.read);
+    if (!leaves) return;
+    const rows = [...(listRef.current?.querySelectorAll('.notif') || [])];
+    const i = rows.indexOf(e.currentTarget.closest('.notif'));
+    const target = rows[i + 1] || rows[i - 1];
+    setTimeout(() => (target?.querySelector('.notif-main') || listRef.current?.closest('.notif-pop'))?.focus(), 0);
+  };
   const today = startOfToday();
   const groups = [[t('Today'), shown.filter((n) => n.at >= today)], [t('Earlier'), shown.filter((n) => n.at < today)]].filter(([, l]) => l.length);
   // There's no way to restore cleared notifications, so ask first.
@@ -103,12 +114,12 @@ function NotificationsPanel() {
   };
   return (
     <div className="popover-anchor" ref={pop.ref}>
-      <button className={`icon-btn topbar-icon ${ring ? 'bell-ring' : ''}`} onClick={pop.toggle} data-tip={t('Notifications')} aria-label={unread ? t('Notifications, {n} unread', { n: unread }) : t('Notifications')}>
+      <button className={`icon-btn topbar-icon ${ring ? 'bell-ring' : ''}`} onClick={pop.toggle} aria-haspopup="dialog" aria-expanded={pop.open} data-tip={t('Notifications')} aria-label={unread ? t('Notifications, {n} unread', { n: unread }) : t('Notifications')}>
         <Bell size={19} strokeWidth={1.8} />
         {unread > 0 && <span className={`dot-badge ${unread > 9 ? 'wide' : ''}`} aria-hidden="true">{unread > 99 ? '99+' : unread}</span>}
       </button>
       {pop.open && (
-        <div className="popover pop-in notif-pop">
+        <div className="popover pop-in notif-pop" role="dialog" aria-label={t('Notifications')} tabIndex={-1}>
           <div className="pop-head">
             <strong>{t('Notifications')}</strong>
             <div className="pop-head-actions">
@@ -117,11 +128,11 @@ function NotificationsPanel() {
               <button className="icon-btn" onClick={() => { pop.setOpen(false); navigate('/settings/notifications'); }} aria-label={t('Notification settings')} data-tip={t('Settings')}><Settings size={15} /></button>
             </div>
           </div>
-          <div className="notif-tabs" role="tablist" aria-label={t('Show')}>
-            <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>{t('All')}</button>
-            <button role="tab" aria-selected={filter === 'unread'} className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter('unread')}>{t('Unread')}{unread > 0 && <span className="count">{unread}</span>}</button>
+          <div className="notif-tabs" role="group" aria-label={t('Show')}>
+            <button aria-pressed={filter === 'all'} className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>{t('All')}</button>
+            <button aria-pressed={filter === 'unread'} className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter('unread')}>{t('Unread')}{unread > 0 && <span className="count">{unread}</span>}</button>
           </div>
-          <div className="notif-list" aria-live="polite">
+          <div className="notif-list" ref={listRef}>
             {shown.length === 0 && (filter === 'unread' && state.notifications.length
               ? <EmptyState icon={CheckCheck} title={t('No unread notifications')} text={t('You have read everything.')} compact />
               : <EmptyState icon={Bell} title={t("You're all caught up")} text={t('New activity on your files will appear here.')} compact />)}
@@ -141,10 +152,10 @@ function NotificationsPanel() {
                         </span>
                       </button>
                       <span className="notif-actions">
-                        <button className="icon-btn" onClick={() => api.markNotification(n.id, !n.read)} aria-label={n.read ? t('Mark as unread') : t('Mark as read')} data-tip={n.read ? t('Mark as unread') : t('Mark as read')}>
+                        <button className="icon-btn" onClick={(e) => { keepFocus(e, n.id); api.markNotification(n.id, !n.read); }} aria-label={n.read ? t('Mark as unread') : t('Mark as read')} data-tip={n.read ? t('Mark as unread') : t('Mark as read')}>
                           {n.read ? <Mail size={14} /> : <MailOpen size={14} />}
                         </button>
-                        <button className="icon-btn" onClick={() => api.removeNotification(n.id)} aria-label={t('Remove notification')} data-tip={t('Remove')}><X size={14} /></button>
+                        <button className="icon-btn" onClick={(e) => { keepFocus(e, n.id, true); api.removeNotification(n.id); }} aria-label={t('Remove notification')} data-tip={t('Remove')}><X size={14} /></button>
                       </span>
                       {!n.read && <span className="unread-dot" role="img" aria-label={t('Unread')} />}
                     </div>

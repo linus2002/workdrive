@@ -1912,3 +1912,9 @@ main .tabs, main .settings-nav {
 .request-date { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 6px 12px 12px 56px; }
 .request-date .field { margin: 0; }
 @media (max-width: 600px) { .request-date { padding-left: 12px; } }
+
+/* Share dialog: on phones the link-password row wraps, so its hint keeps a readable width. */
+@media (max-width: 600px) { .link-opt.sub { flex-wrap: wrap; } .link-opt.sub > .grow { flex-basis: 100%; } }
+
+/* Folder tile: star + menu button grouped in one grid cell, laid out as before. */
+.folder-tile .tile-actions { display: inline-flex; align-items: center; gap: 2px; flex: none; }

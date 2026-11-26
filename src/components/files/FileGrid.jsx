@@ -64,10 +64,10 @@ export const FolderTile = memo(function FolderTile({ item, state, selected, focu
   const n = itemCount(state.items, item.id);
   return (
     <div className={`folder-tile ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${drop.over ? 'drop-over' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
-      {...dragSourceProps(item, selectedIds, draggable)} {...drop.props} role="gridcell" aria-selected={selected}>
-      <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`}><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
+      {...dragSourceProps(item, selectedIds, draggable)} {...drop.props} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, folder, ${n} item${n === 1 ? '' : 's'}`}>
+      <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`} role="gridcell"><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
       {!(selected || selectionMode) && <FolderGlyph size={30} shared={item.sharedWith?.length > 0} color={item.color || teamColor} />}
-      <div className="min0 grow">
+      <div className="min0 grow" role="gridcell">
         <div className="card-name-row">
           <div className="tile-name truncate" title={item.name}><Highlight text={item.name} query={query} /></div>
           {labelsOf(state, item).length > 0 && (
@@ -78,8 +78,11 @@ export const FolderTile = memo(function FolderTile({ item, state, selected, focu
         </div>
         <div className="tile-meta">{n} item{n === 1 ? '' : 's'}</div>
       </div>
-      {item.favorite && <span className="fav-star-wrap" role="img" aria-label="Favorite" title="Favorite"><Star size={13} className="fav-star" fill="currentColor" aria-hidden="true" /></span>}
-      <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
+      {/* Star and menu button sit in their own cell (a grid row may only contain cells). */}
+      <span className="tile-actions" role="gridcell">
+        {item.favorite && <span className="fav-star-wrap" role="img" aria-label="Favorite" title="Favorite"><Star size={13} className="fav-star" fill="currentColor" aria-hidden="true" /></span>}
+        <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
+      </span>
     </div>
   );
 });
@@ -95,8 +98,8 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
     : `${t.label} · ${formatSize(item.size)} · ${context === 'trash' ? `Deleted ${formatDate(item.trashedAt)}` : formatDate(item.modifiedAt)}`;
   return (
     <div className={`file-card ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${isShortcut && !target ? 'broken' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
-      {...dragSourceProps(item, selectedIds, draggable)} role="gridcell" aria-selected={selected}>
-      <div className="card-thumb">
+      {...dragSourceProps(item, selectedIds, draggable)} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, ${meta}`}>
+      <div className="card-thumb" role="gridcell">
         {target?.type === 'folder'
           ? <div className="card-icon-thumb"><FolderGlyph size={64} color={target.color || undefined} /></div>
           : <CardThumb item={target || item} />}
@@ -110,7 +113,7 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
           {openCommentCount(item) > 0 && !item.trashed && <span className="card-badge" role="img" title={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`} aria-label={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`}><MessageSquare size={12} aria-hidden="true" />{openCommentCount(item)}</span>}
         </div>
       </div>
-      <div className="card-body">
+      <div className="card-body" role="gridcell">
         <FileIcon item={item} size={20} />
         <div className="min0 grow">
           <div className="card-name-row">

@@ -10,7 +10,7 @@ import { recognize } from './ocr';
 
 export const MAX_TEXT = 60000; // characters kept per file
 
-const decodeXml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, '&');
+const decodeXml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, '&');
 const stripXml = (xml) => decodeXml(xml.replace(/<[^>]+>/g, ''));
 const tidy = (t) => t.replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, MAX_TEXT);
 
@@ -89,6 +89,15 @@ export async function pptxFirstSlide(blob) {
   if (!slide) return null;
   const lines = xmlOf(slide).split('</a:p>').map((p) => stripXml(p).trim()).filter(Boolean);
   return { title: lines[0] || '', body: lines.slice(1).join('\n') };
+}
+
+/** Title and text of every slide of a .pptx, in order. */
+export async function pptxSlides(blob, max = 200) {
+  const slides = await zipEntries(blob, (p) => /^ppt\/slides\/slide\d+\.xml$/.test(p));
+  return slides.slice(0, max).map((e) => {
+    const lines = xmlOf(e).split('</a:p>').map((p) => stripXml(p).trim()).filter(Boolean);
+    return { title: lines[0] || '', body: lines.slice(1).join('\n') };
+  });
 }
 
 async function xlsxText(blob) {

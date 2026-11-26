@@ -123,6 +123,13 @@ function usePdfFind(doc, wrapRef) {
   return { byPage, cur };
 }
 
+/** pdf.js errors in plain words ("No password given" means the PDF is password-protected). */
+export function pdfErrorText(e) {
+  if (e?.name === 'PasswordException') return 'This PDF is password-protected.';
+  if (e?.name === 'InvalidPDFException') return 'This file is damaged or isn’t really a PDF.';
+  return 'This PDF couldn’t be opened.';
+}
+
 /** Load a pdf.js document from a Blob (or a Promise of one). Returns { doc, sizes, error }. */
 export function usePdfDocument(source, key) {
   const [res, setRes] = useState({ doc: null, sizes: null, error: null });
@@ -147,7 +154,7 @@ export function usePdfDocument(source, key) {
         for (let i = measured + 1; i <= doc.numPages; i++) sizes.push({ ...sizes[0], estimated: true });
         if (alive) setRes({ doc, sizes, error: null }); else doc.destroy();
       } catch (e) {
-        if (alive) setRes({ doc: null, sizes: null, error: e?.message || 'Could not open this PDF.' });
+        if (alive) setRes({ doc: null, sizes: null, error: pdfErrorText(e) });
       }
     })();
     return () => { alive = false; if (doc) doc.destroy(); };

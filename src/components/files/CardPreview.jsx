@@ -168,7 +168,8 @@ function VideoPreview({ item }) {
   const [playing, setPlaying] = useState(false);
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const enter = () => { if (src && finePointer()) timer.current = setTimeout(() => setPlaying(true), 350); };
+  // Only videos whose frame could be read play on hover (an unreadable one would just show black).
+  const enter = () => { if (src && thumb && finePointer()) timer.current = setTimeout(() => setPlaying(true), 350); };
   const leave = () => { clearTimeout(timer.current); setPlaying(false); };
   const duration = formatDuration(thumb?.duration);
   return (

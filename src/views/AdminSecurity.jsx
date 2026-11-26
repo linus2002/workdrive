@@ -251,7 +251,9 @@ export function SessionsTab() {
     ui.toast(`Signed ${u?.name || 'user'} out of ${s.device}`, { type: 'success' });
   };
   const endAll = () => ui.openDialog('confirm', {
-    title: `Sign ${person.name} out everywhere?`, message: `All ${rows.length} of their sessions end now${who === state.meId ? ', except this one' : ''}. They'll need to sign in again.`,
+    title: `Sign ${person.name} out everywhere?`, message: who === state.meId
+      ? `Your other ${rows.length - 1} session${rows.length - 1 === 1 ? '' : 's'} end${rows.length - 1 === 1 ? 's' : ''} now; this one stays signed in.`
+      : `All ${rows.length} of their sessions end now. They'll need to sign in again.`,
     confirmLabel: 'Sign out everywhere', danger: true,
     onConfirm: () => { const n = api.endUserSessions(who, who === state.meId ? sid : null); ui.toast(`Ended ${n} session${n === 1 ? '' : 's'}`, { type: 'success' }); },
   });
