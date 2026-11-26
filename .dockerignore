@@ -1,0 +1,17 @@
+# Keep the build context small and free of local or secret files.
+node_modules
+dist
+dist-*
+.git
+.gitignore
+.claude
+.vscode
+.idea
+*.log
+.env
+.env.*
+tests/e2e/shots
+coverage
+Dockerfile
+.dockerignore
+DEPLOY.md

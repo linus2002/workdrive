@@ -12,7 +12,10 @@ npm run lint     # code checker (catches undefined names and misused React hooks
 npm test         # logic tests (Vitest)
 npm run test:e2e # browser tests + accessibility scan; needs `npm run dev` running and Edge or Chrome installed
 npm run check    # lint + tests + build
+npm run preview:prod # production build with the production security headers, http://localhost:4180
 ```
+
+**Production:** a Docker image (Node build + nginx) ready for Coolify. See [DEPLOY.md](DEPLOY.md).
 
 No backend is required. All data lives in the browser: app state in `localStorage` (`workvault-drive:v1`) and file
 bytes in IndexedDB, both behind the storage layer in `src/data/storage/` (swap those modules for a server-backed
