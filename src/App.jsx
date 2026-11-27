@@ -45,8 +45,10 @@ function ThemeSync() {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
+      // default: light pages + navy sidebar · light: light pages + light sidebar · dark: everything dark.
       const dark = theme === 'dark' || (theme === 'system' && mq.matches);
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.sidebar = !dark && theme !== 'light' ? 'navy' : 'plain';
     };
     apply();
     mq.addEventListener('change', apply);

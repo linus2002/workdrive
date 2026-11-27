@@ -15,7 +15,7 @@ from scipy import ndimage
 
 src_dir, out_dir, preview = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 out_dir.mkdir(parents=True, exist_ok=True)
-names = ['docx', 'excel', 'ppt', 'pdf', 'image', 'zip']
+names = ['docx', 'excel', 'ppt', 'pdf', 'image', 'zip', 'mp4']
 SIZE = 128
 sheet = Image.new('RGB', (len(names) * 160 + 20, 380), 'white')
 

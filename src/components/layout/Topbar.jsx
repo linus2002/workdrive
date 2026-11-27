@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Plus, Upload, Bell, HelpCircle, FolderPlus, FileUp, FolderUp, FileText, Sheet, Presentation,
   LayoutTemplate, ChevronDown, User, SlidersHorizontal, HardDrive, Building2, LogOut, CheckCheck, Share2,
-  MessageSquare, Users, UploadCloud, Info, Moon, Sun, CheckSquare, BadgeCheck, PenTool, Settings, Mail, MailOpen, X,
+  MessageSquare, Users, UploadCloud, Info, CheckSquare, BadgeCheck, PenTool, Settings, Mail, MailOpen, X,
 } from 'lucide-react';
 import { useDrive, useMe } from '../../store/DriveStore';
 import { useUI } from '../../store/UIContext';
@@ -170,6 +170,35 @@ function NotificationsPanel() {
   );
 }
 
+/** The three themes: Default (navy sidebar), Light (light sidebar), Dark. "System" is chosen in Settings → Preferences. */
+export const THEMES = [
+  { id: 'default', label: 'Default' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+];
+
+function ThemePicker() {
+  const { state, api } = useDrive();
+  const t = useT();
+  const cur = state.settings.theme;
+  return (
+    <div className="profile-theme" role="group" aria-label={t('Theme')}>
+      <div className="profile-theme-head">
+        <span>{t('Theme')}</span>
+        {cur === 'system' && <span className="muted">{t('Following your device')}</span>}
+      </div>
+      <div className="theme-mini-row">
+        {THEMES.map((th) => (
+          <button key={th.id} type="button" className={`theme-mini ${cur === th.id ? 'active' : ''}`} aria-pressed={cur === th.id}
+            onClick={() => api.updateSettings({ theme: th.id })}>
+            {t(th.label)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function UserProfileMenu() {
   const { state, api } = useDrive();
   const me = useMe();
@@ -177,13 +206,11 @@ function UserProfileMenu() {
   const navigate = useNavigate();
   const pop = usePopover();
   const used = myUsage(state);
-  const isDark = state.settings.theme === 'dark';
   const items = [
     { label: t('Profile'), icon: User, onClick: () => navigate('/settings/profile') },
     { label: t('Preferences'), icon: SlidersHorizontal, onClick: () => navigate('/settings/preferences') },
     { label: t('Storage'), icon: HardDrive, onClick: () => navigate('/settings/storage') },
     me?.role === 'Admin' && { label: t('Admin Console'), icon: Building2, onClick: () => navigate('/admin') },
-    { label: isDark ? t('Light theme') : t('Dark theme'), icon: isDark ? Sun : Moon, onClick: () => api.updateSettings({ theme: isDark ? 'light' : 'dark' }) },
     { divider: true },
     { label: t('Sign out'), icon: LogOut, danger: true, onClick: () => { api.signOut(); navigate('/login', { replace: true }); } },
   ].filter(Boolean);
@@ -207,6 +234,7 @@ function UserProfileMenu() {
             <ProgressBar value={(used / state.org.userQuota) * 100} />
             <span>{t('{used} of {quota} used', { used: formatSize(used), quota: formatSize(state.org.userQuota) })}</span>
           </div>
+          <ThemePicker />
           <MenuList items={items} onClose={() => pop.setOpen(false)} />
         </div>
       )}

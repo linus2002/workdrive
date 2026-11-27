@@ -13,7 +13,7 @@ const SHELL = `${PREFIX}shell-${VERSION}`;
 const ASSETS = `${PREFIX}assets-${VERSION}`;
 const FONTS = `${PREFIX}fonts`;
 const MATCH = { ignoreVary: true }; // servers send `Vary: Origin`; module scripts are requested with an Origin header
-const SHELL_URLS = ['/', '/manifest.webmanifest', '/logo.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+const SHELL_URLS = ['/', '/manifest.webmanifest', '/logo.png', '/favicon-48.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 /** The asset URLs index.html references directly (entry script, CSS, preloaded chunks). */
 async function shellAssets(html) {

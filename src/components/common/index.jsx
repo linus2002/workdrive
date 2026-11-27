@@ -62,7 +62,7 @@ export function FolderGlyph({ size = 32, color = '#F5B840', shared = false, team
  * Picture icons for the common file types: public/icons/filetypes (128 px), made from the originals in
  * design/filetypeicons by design/make_filetype_icons.py. Other types keep the drawn label icon below.
  */
-const TYPE_ICON = { document: 'docx', spreadsheet: 'excel', presentation: 'ppt', pdf: 'pdf', image: 'image', archive: 'zip' };
+const TYPE_ICON = { document: 'docx', spreadsheet: 'excel', presentation: 'ppt', pdf: 'pdf', image: 'image', archive: 'zip', video: 'mp4' };
 
 export function FileGlyph({ ext, size = 32 }) {
   const t = getFileType(ext);

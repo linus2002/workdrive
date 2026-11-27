@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { NavLink, useParams, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, SlidersHorizontal, Bell, Palette, Languages, Shield, HardDrive, Monitor, Moon, Sun, Smartphone, Laptop, RotateCcw, DatabaseBackup } from 'lucide-react';
+import { User, SlidersHorizontal, Bell, Palette, Languages, Shield, HardDrive, Monitor, Moon, Sun, PanelLeft, Smartphone, Laptop, RotateCcw, DatabaseBackup } from 'lucide-react';
 import { useDrive, useMe, currentSessionId } from '../store/DriveStore';
 import { useUI } from '../store/UIContext';
 import { myUsage, usageByCategory } from '../store/selectors';
@@ -168,7 +168,7 @@ function Notifications() {
 function Appearance() {
   const { state, api } = useDrive();
   const s = state.settings;
-  const themes = [{ id: 'light', label: 'Light', icon: Sun }, { id: 'dark', label: 'Dark', icon: Moon }, { id: 'system', label: 'System', icon: Monitor }];
+  const themes = [{ id: 'default', label: 'Default', icon: PanelLeft }, { id: 'light', label: 'Light', icon: Sun }, { id: 'dark', label: 'Dark', icon: Moon }, { id: 'system', label: 'System', icon: Monitor }];
   return (
     <Section title="Appearance" desc="Customize how the workspace looks on this device.">
       <div className="theme-cards">

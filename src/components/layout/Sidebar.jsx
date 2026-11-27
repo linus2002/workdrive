@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   FolderClosed, Users, FileText, UserRoundCheck, Share2, Clock, Star, Trash2, ChevronRight, LayoutTemplate,
@@ -135,6 +136,36 @@ export default function Sidebar() {
     window.addEventListener('keydown', onKey);
     return () => { clearTimeout(timer); window.removeEventListener('keydown', onKey); };
   }, [mobileNav, setMobileNav]);
+
+  // Icon-only sidebar: show each entry's label in a floating flyout on hover/focus. It is fixed-positioned
+  // (portal) so it isn't clipped by the scrolling nav and doesn't create a horizontal scrollbar.
+  const [flyout, setFlyout] = useState(null);
+  useEffect(() => {
+    const aside = asideRef.current;
+    if (!aside) return undefined;
+    const show = (e) => {
+      const el = e.target.closest?.('.sidebar-nav [data-tip]');
+      if (!el || aside.offsetWidth > 100 || !window.matchMedia('(min-width: 721px)').matches) { setFlyout(null); return; }
+      const r = el.getBoundingClientRect();
+      setFlyout({ text: el.getAttribute('data-tip'), top: r.top + r.height / 2, left: r.right + 10, active: el.classList.contains('active') });
+    };
+    const hide = (e) => { if (!e.relatedTarget || !e.currentTarget.contains(e.relatedTarget) || !e.relatedTarget.closest?.('[data-tip]')) setFlyout(null); };
+    const nav = aside.querySelector('.sidebar-nav');
+    const clear = () => setFlyout(null);
+    aside.addEventListener('mouseover', show);
+    aside.addEventListener('focusin', show);
+    aside.addEventListener('mouseleave', clear);
+    aside.addEventListener('focusout', hide);
+    nav?.addEventListener('scroll', clear, { passive: true });
+    return () => {
+      aside.removeEventListener('mouseover', show);
+      aside.removeEventListener('focusin', show);
+      aside.removeEventListener('mouseleave', clear);
+      aside.removeEventListener('focusout', hide);
+      nav?.removeEventListener('scroll', clear);
+    };
+  }, []);
+  useEffect(() => { setFlyout(null); }, [location.pathname, location.search, collapsed]);
 
   const activeChain = useMemo(() => {
     const m = location.pathname.match(/\/(?:folders|team-folders\/[^/]+)\/([^/]+)/);
@@ -334,6 +365,10 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
+      {flyout && createPortal(
+        <div className={`sidebar-flyout ${flyout.active ? 'active' : ''}`} style={{ top: flyout.top, left: flyout.left }} aria-hidden="true">{flyout.text}</div>,
+        document.body,
+      )}
     </>
   );
 }
