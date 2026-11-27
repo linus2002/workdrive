@@ -30,7 +30,7 @@ const SESSION_KEY = 'workvault-drive:session';
 const NOTIF_MAX = 200;
 
 export const DEFAULT_SETTINGS = {
-  theme: 'system', // light | dark | system
+  theme: 'default', // default (navy sidebar) | light (light sidebar) | dark | system (default or dark, following the device)
   density: 'comfortable', // comfortable | compact
   language: '', // empty = follow the browser's language when it's supported (see src/i18n)
   dateFormat: 'relative',
@@ -73,7 +73,7 @@ function seedState() {
 }
 
 /** The newest state format this build understands (seedVersion after all migrations). */
-export const SEED_VERSION = 14;
+export const SEED_VERSION = 15;
 
 const THUMB_FIELDS = ['pdfThumb', 'pdfThumbOf', 'videoThumb', 'videoThumbOf', 'videoThumbV', 'videoDuration'];
 function dropSavedThumbs(items) {
@@ -109,7 +109,7 @@ function dropEmbeddedCopies(s) {
   return items ? { ...s, items } : s;
 }
 
-/** Turn a saved state object (any seedVersion 1..14) into current state; seed data when missing or unusable. */
+/** Turn a saved state object (any seedVersion 1..15) into current state; seed data when missing or unusable. */
 function hydrate(parsed) {
   try {
     if (parsed) {
@@ -269,6 +269,11 @@ function hydrate(parsed) {
         if ((merged.seedVersion || 1) < 14) {
           merged.org = { ...merged.org, policies: { ...merged.org.policies, twoFactor: false } };
           merged.seedVersion = 14;
+        }
+        // One-time migration: the old "light" theme (navy sidebar) is now called "default"; "light" means a light sidebar.
+        if ((merged.seedVersion || 1) < 15) {
+          if (merged.settings.theme === 'light') merged.settings = { ...merged.settings, theme: 'default' };
+          merged.seedVersion = 15;
         }
         // "Keep me signed in" off: the sign-in lasts only for this browser session.
         // Thumbnails used to be saved on items; they now live in their own cache (thumbStore), not in localStorage.
