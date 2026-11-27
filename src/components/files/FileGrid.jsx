@@ -66,17 +66,16 @@ export const FolderTile = memo(function FolderTile({ item, state, selected, focu
     <div className={`folder-tile ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${drop.over ? 'drop-over' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
       {...dragSourceProps(item, selectedIds, draggable)} {...drop.props} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, folder, ${n} item${n === 1 ? '' : 's'}`}>
       <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`} role="gridcell"><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
-      {!(selected || selectionMode) && <FolderGlyph size={30} shared={item.sharedWith?.length > 0} color={item.color || teamColor} />}
+      {!(selected || selectionMode) && <FolderGlyph size={24} shared={item.sharedWith?.length > 0} color={item.color || teamColor} />}
       <div className="min0 grow" role="gridcell">
         <div className="card-name-row">
-          <div className="tile-name truncate" title={item.name}><Highlight text={item.name} query={query} /></div>
+          <div className="tile-name truncate" title={`${item.name} · ${n} item${n === 1 ? '' : 's'}`}><Highlight text={item.name} query={query} /></div>
           {labelsOf(state, item).length > 0 && (
             <span className="label-dots" title={labelsOf(state, item).map((l) => l.name).join(', ')}>
               {labelsOf(state, item).slice(0, 4).map((l) => <span key={l.id} className="label-dot" style={{ background: l.color }} />)}
             </span>
           )}
         </div>
-        <div className="tile-meta">{n} item{n === 1 ? '' : 's'}</div>
       </div>
       {/* Star and menu button sit in their own cell (a grid row may only contain cells). */}
       <span className="tile-actions" role="gridcell">
@@ -99,12 +98,26 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
   return (
     <div className={`file-card ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${isShortcut && !target ? 'broken' : ''}`} data-id={item.id} {...tap} onDoubleClick={() => onOpen(item)} onContextMenu={(e) => onContext(e, item)}
       {...dragSourceProps(item, selectedIds, draggable)} role="row" id={`fi-${item.id}`} aria-selected={selected} aria-label={`${item.name}, ${meta}`}>
+      <div className="card-body" role="gridcell">
+        {/* While selecting, the checkbox takes the file icon's place (as on folder tiles). */}
+        <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`}><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
+        {!(selected || selectionMode) && <FileIcon item={item} size={20} />}
+        <div className="card-name-row min0 grow">
+          <div className="card-name truncate" title={`${item.name}
+${meta}`}><Highlight text={item.name} query={query} /></div>
+          {!item.trashed && labelsOf(state, item).length > 0 && (
+            <span className="label-dots" title={labelsOf(state, item).map((l) => l.name).join(', ')}>
+              {labelsOf(state, item).slice(0, 4).map((l) => <span key={l.id} className="label-dot" style={{ background: l.color }} />)}
+            </span>
+          )}
+        </div>
+        <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
+      </div>
       <div className="card-thumb" role="gridcell">
         {target?.type === 'folder'
           ? <div className="card-icon-thumb"><FolderGlyph size={64} color={target.color || undefined} /></div>
           : <CardThumb item={target || item} />}
         {isShortcut && <span className="card-shortcut" role="img" aria-label="Shortcut" title="Shortcut"><CornerUpRight size={14} strokeWidth={2.6} /></span>}
-        <div className={`tile-check ${selected || selectionMode ? 'show' : ''}`}><Checkbox checked={selected} onChange={() => toggleSelect(item)} label={`Select ${item.name}`} /></div>
         <div className="card-badges">
           {item.favorite && <span className="card-badge fav" role="img" aria-label="Favorite" title="Favorite"><Star size={12} fill="currentColor" aria-hidden="true" /></span>}
           {shared && <span className="card-badge" role="img" aria-label="Shared with people" title="Shared with people"><Users size={12} aria-hidden="true" /></span>}
@@ -113,22 +126,7 @@ export const FileCard = memo(function FileCard({ item, state, selected, focused,
           {openCommentCount(item) > 0 && !item.trashed && <span className="card-badge" role="img" title={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`} aria-label={`${openCommentCount(item)} open comment${openCommentCount(item) === 1 ? '' : 's'}`}><MessageSquare size={12} aria-hidden="true" />{openCommentCount(item)}</span>}
         </div>
       </div>
-      <div className="card-body" role="gridcell">
-        <FileIcon item={item} size={20} />
-        <div className="min0 grow">
-          <div className="card-name-row">
-            <div className="card-name truncate" title={item.name}><Highlight text={item.name} query={query} /></div>
-            {!item.trashed && labelsOf(state, item).length > 0 && (
-              <span className="label-dots" title={labelsOf(state, item).map((l) => l.name).join(', ')}>
-                {labelsOf(state, item).slice(0, 4).map((l) => <span key={l.id} className="label-dot" style={{ background: l.color }} />)}
-              </span>
-            )}
-          </div>
-          <div className="card-meta truncate" title={meta}>{meta}</div>
-          {showSnippets && query && <Snippet id={item.id} q={query} name={item.name} radius={0} />}
-        </div>
-        <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); onMore(e, item); }} aria-label={`More actions for ${item.name}`}><MoreVertical size={16} /></button>
-      </div>
+      {showSnippets && query && <div className="card-snippet"><Snippet id={item.id} q={query} name={item.name} radius={0} /></div>}
     </div>
   );
 });

@@ -45,6 +45,9 @@
   --radius-lg: 10px;
   --row-h: 52px;
   --topbar-h: 58px;
+  --tile-bg: #f0f4f9;
+  --tile-hover: #e1e6ed;
+  --tile-selected: #c2e7ff;
   --sidebar-w: 248px;
   --sidebar-w-collapsed: 64px;
   --font: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -86,6 +89,9 @@
   --danger-soft: #3a1a1a;
   --file-bg: #22262b;
   --file-stroke: #444b54;
+  --tile-bg: #1f2328;
+  --tile-hover: #2a2f35;
+  --tile-selected: #1c3550;
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 16px 44px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
@@ -653,21 +659,20 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .grid-wrap > .grid-section { margin: 0 0 -6px; }
 .grid-wrap > .grid-section:not(:first-child) { margin-top: 6px; }
 .grid-section { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.folder-tile { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 6px 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); cursor: default; position: relative; user-select: none; transition: box-shadow 0.12s, border-color 0.12s; }
-.folder-tile:hover { background: var(--bg-sub); border-color: var(--border-strong); }
-.folder-tile.selected { background: var(--primary-soft); border-color: var(--primary); }
-.folder-tile.drop-over { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft-2); background: var(--primary-soft); }
-.folder-tile .tile-check { position: static; display: none; }
-.folder-tile .tile-check.show { display: inline-flex; }
-.folder-tile.selected:hover { background: var(--primary-soft); }
-.tile-name { font-size: 13.5px; font-weight: 500; }
+.folder-grid, .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+/* Grid cards: borderless grey tiles. Folders are a single row; files have a header row over the thumbnail. */
+.folder-tile { display: flex; align-items: center; gap: 14px; height: 64px; padding: 0 8px 0 18px; border-radius: 14px; background: var(--tile-bg); cursor: default; position: relative; user-select: none; transition: background 0.12s; }
+.folder-tile:hover { background: var(--tile-hover); }
+.folder-tile.selected, .folder-tile.selected:hover { background: var(--tile-selected); }
+.folder-tile.drop-over { box-shadow: inset 0 0 0 2px var(--primary); background: var(--tile-selected); }
+.folder-tile .tile-check, .card-body .tile-check { position: static; display: none; box-shadow: none; background: none; }
+.folder-tile .tile-check.show, .card-body .tile-check.show { display: inline-flex; }
+.tile-name { font-size: 14px; font-weight: 500; color: var(--text); }
 .tile-meta { font-size: 12px; color: var(--text-2); }
-.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px; }
-.file-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); overflow: hidden; cursor: default; user-select: none; transition: box-shadow 0.12s, border-color 0.12s; display: flex; flex-direction: column; }
-.file-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
-.file-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-.card-thumb { position: relative; aspect-ratio: 16 / 10.5; background: var(--bg); border-bottom: 1px solid var(--border); overflow: hidden; container-type: inline-size; }
+.file-card { border-radius: 14px; background: var(--tile-bg); padding: 0 10px 10px; cursor: default; user-select: none; transition: background 0.12s; display: flex; flex-direction: column; }
+.file-card:hover { background: var(--tile-hover); }
+.file-card.selected, .file-card.selected:hover { background: var(--tile-selected); }
+.card-thumb { position: relative; aspect-ratio: 322 / 268; background: var(--bg); border-radius: 8px; overflow: hidden; container-type: inline-size; }
 .card-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .card-pdf { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; background: #fff; }
 .details-thumb.pdf { object-fit: cover; object-position: top; max-height: 220px; background: #fff; }
@@ -700,8 +705,9 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .card-badge { width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,0.92); color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm); }
 :root[data-theme='dark'] .card-badge { background: rgba(30,33,38,0.9); }
 .card-badge.fav { color: #f59e0b; }
-.card-body { display: flex; align-items: center; gap: 8px; padding: 9px 4px 10px 12px; }
-.card-name { font-size: 13.5px; font-weight: 500; }
+.card-body { display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 0 0 8px; }
+.card-name { font-size: 14px; font-weight: 500; color: var(--text); }
+.card-snippet { padding: 8px 4px 0; font-size: 12px; }
 .card-meta { font-size: 11.5px; color: var(--text-2); margin-top: 1px; }
 
 /* skeletons */
@@ -712,10 +718,10 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 .skel-box { width: 28px; height: 28px; border-radius: 6px; flex: none; }
 .skel-line { height: 10px; width: 40%; }
 .skel-line.short { width: 12%; }
-.skeleton-card { padding: 0 0 12px; gap: 8px; }
-.skeleton-card .skel-line { margin: 0 12px; width: 70%; }
-.skeleton-card .skel-line.short { width: 40%; }
-.skel-thumb { aspect-ratio: 16/10.5; border-radius: 0; }
+.skeleton-card { padding: 0 10px 10px; gap: 0; }
+.skeleton-card .skel-line { margin: 21px 8px; width: 60%; order: -1; }
+.skeleton-card .skel-line.short { display: none; }
+.skel-thumb { aspect-ratio: 322 / 268; border-radius: 8px; }
 .file-grid:has(.skeleton-card) { padding: 18px 24px; }
 
 /* empty states */
@@ -1100,7 +1106,10 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
   .file-row:not(.selected) .cell-check .cb { opacity: 0.6; }
   .grid-wrap { padding: 12px 14px 24px; gap: 12px; }
   .file-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .folder-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .folder-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .folder-tile { height: 56px; padding-left: 14px; gap: 10px; }
+  .file-card { padding: 0 6px 6px; }
+  .card-body { gap: 8px; height: 46px; padding-left: 6px; }
   .details-panel { position: fixed !important; inset: auto 0 0 0 !important; top: 20% !important; width: 100% !important; border-radius: 14px 14px 0 0; border-left: 0; z-index: 600 !important; box-shadow: var(--shadow-lg); }
   .modal-backdrop { padding: 0; align-items: flex-end; }
   .modal { max-height: 92vh; border-radius: 14px 14px 0 0; max-width: 100% !important; }
@@ -1129,10 +1138,8 @@ a.crumb:hover { background: var(--bg-hover); color: var(--text); }
 
 @media (max-width: 480px) {
   .folder-grid { grid-template-columns: 1fr; }
-  .card-body { padding: 8px 2px 9px 10px; gap: 4px; align-items: flex-start; }
-  .card-body > .file-glyph, .card-body > .file-thumb-sm { display: none; }
-  .card-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; font-size: 13px; word-break: break-word; }
-  .card-body .icon-btn { margin-top: -4px; }
+  .card-body { gap: 6px; padding-left: 4px; }
+  .card-name { font-size: 13px; }
 }
 
 
